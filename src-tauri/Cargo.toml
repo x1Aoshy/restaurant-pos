@@ -1,0 +1,39 @@
+[package]
+name = "restaurant"
+version = "0.1.0"
+description = "Punto de venta para restaurante"
+authors = ["x1Aoshy"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "restaurant_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `devtools`: habilita inspeccionar la ventana también en compilación de
+# release. Temporal, mientras se estabiliza la instalación — sin esto un fallo
+# solo visible en el instalador se diagnostica a ciegas.
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+# SQLite embebido. `sqlite` es la única característica activada: no queremos
+# arrastrar los controladores de Postgres ni MySQL dentro del instalador.
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Se usa directamente solo para `sql_transaction`: el plugin ejecuta cada
+# sentencia en una conexión cualquiera de su pool, así que no puede abrir una
+# transacción de verdad. La versión debe coincidir con la que arrastra el
+# plugin para que los tipos `Pool<Sqlite>` sean el mismo.
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
+tokio = { version = "1", features = ["sync"] }
+

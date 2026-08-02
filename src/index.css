@@ -1,0 +1,463 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/outfit";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    /* Outfit for headings — friendlier and rounder than Geist, which carries
+       the whole hospitality feel. Geist stays for body copy and Geist Mono for
+       money, where tabular figures matter more than warmth. */
+    --font-heading: 'Outfit Variable', 'Geist Variable', ui-sans-serif, sans-serif;
+    --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+
+    --color-status-free: var(--status-free);
+    --color-status-free-soft: var(--status-free-soft);
+    --color-status-busy: var(--status-busy);
+    --color-status-busy-soft: var(--status-busy-soft);
+    --color-status-billed: var(--status-billed);
+    --color-status-billed-soft: var(--status-billed-soft);
+
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+
+    --radius-sm: calc(var(--radius) * 0.5);
+    --radius-md: calc(var(--radius) * 0.7);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.3);
+    --radius-2xl: calc(var(--radius) * 1.6);
+    --radius-3xl: calc(var(--radius) * 2);
+    --radius-4xl: calc(var(--radius) * 2.4);
+}
+
+/* =============================================================================
+   Paleta cálida — hospitality.
+   Base piedra templada en lugar de gris neutro: incluso los grises llevan algo
+   de croma, que es lo que separa «acogedor» de «panel corporativo».
+   ============================================================================= */
+:root {
+    --radius: 1rem;
+
+    --background: oklch(0.9908 0.0045 92);
+    --foreground: oklch(0.2161 0.0061 56);
+
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.2161 0.0061 56);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.2161 0.0061 56);
+
+    --primary: oklch(0.666 0.179 58.318);
+    --primary-foreground: oklch(0.995 0.004 90);
+
+    --secondary: oklch(0.9598 0.0128 84);
+    --secondary-foreground: oklch(0.268 0.007 34.298);
+
+    --muted: oklch(0.9642 0.0089 84);
+    --muted-foreground: oklch(0.553 0.013 58.071);
+
+    --accent: oklch(0.9542 0.0242 78);
+    --accent-foreground: oklch(0.553 0.195 38.402);
+
+    --destructive: oklch(0.586 0.253 17.585);
+
+    --border: oklch(0.9083 0.0093 76);
+    --input: oklch(0.9083 0.0093 76);
+    --ring: oklch(0.666 0.179 58.318);
+
+    --status-free: oklch(0.627 0.194 149.214);
+    --status-free-soft: oklch(0.945 0.045 150);
+    --status-busy: oklch(0.666 0.179 58.318);
+    --status-busy-soft: oklch(0.952 0.042 82);
+    --status-billed: oklch(0.586 0.253 17.585);
+    --status-billed-soft: oklch(0.948 0.032 15);
+
+    --chart-1: oklch(0.666 0.179 58.318);
+    --chart-2: oklch(0.627 0.194 149.214);
+    --chart-3: oklch(0.553 0.195 38.402);
+    --chart-4: oklch(0.586 0.253 17.585);
+    --chart-5: oklch(0.553 0.013 58.071);
+
+    --sidebar: oklch(0.9797 0.0074 88);
+    --sidebar-foreground: oklch(0.2161 0.0061 56);
+    --sidebar-primary: oklch(0.666 0.179 58.318);
+    --sidebar-primary-foreground: oklch(0.995 0.004 90);
+    --sidebar-accent: oklch(0.9542 0.0242 78);
+    --sidebar-accent-foreground: oklch(0.553 0.195 38.402);
+    --sidebar-border: oklch(0.9083 0.0093 76);
+    --sidebar-ring: oklch(0.666 0.179 58.318);
+}
+
+.dark {
+    --background: oklch(0.1853 0.0079 55);
+    --foreground: oklch(0.9698 0.0062 85);
+
+    --card: oklch(0.2263 0.0094 55);
+    --card-foreground: oklch(0.9698 0.0062 85);
+    --popover: oklch(0.2263 0.0094 55);
+    --popover-foreground: oklch(0.9698 0.0062 85);
+
+    --primary: oklch(0.769 0.188 70.08);
+    --primary-foreground: oklch(0.1962 0.0102 55);
+
+    --secondary: oklch(0.2812 0.0108 55);
+    --secondary-foreground: oklch(0.9698 0.0062 85);
+
+    --muted: oklch(0.2812 0.0108 55);
+    --muted-foreground: oklch(0.7194 0.0134 70);
+
+    --accent: oklch(0.3242 0.0268 62);
+    --accent-foreground: oklch(0.828 0.144 78);
+
+    --destructive: oklch(0.684 0.2 18);
+
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.769 0.188 70.08);
+
+    --status-free: oklch(0.723 0.183 149);
+    --status-free-soft: oklch(0.3082 0.0574 152);
+    --status-busy: oklch(0.769 0.188 70.08);
+    --status-busy-soft: oklch(0.3204 0.0542 72);
+    --status-billed: oklch(0.684 0.2 18);
+    --status-billed-soft: oklch(0.3124 0.0664 17);
+
+    --chart-1: oklch(0.769 0.188 70.08);
+    --chart-2: oklch(0.723 0.183 149);
+    --chart-3: oklch(0.646 0.222 41.116);
+    --chart-4: oklch(0.684 0.2 18);
+    --chart-5: oklch(0.7194 0.0134 70);
+
+    --sidebar: oklch(0.2102 0.0088 55);
+    --sidebar-foreground: oklch(0.9698 0.0062 85);
+    --sidebar-primary: oklch(0.769 0.188 70.08);
+    --sidebar-primary-foreground: oklch(0.1962 0.0102 55);
+    --sidebar-accent: oklch(0.3242 0.0268 62);
+    --sidebar-accent-foreground: oklch(0.828 0.144 78);
+    --sidebar-border: oklch(1 0 0 / 12%);
+    --sidebar-ring: oklch(0.769 0.188 70.08);
+}
+
+/* =============================================================================
+   Paleta «Medianoche» — índigo eléctrico sobre grises fríos, estilo Discord.
+   Los selectores repiten :root[data-palette] para ganar especificidad sobre
+   los bloques base :root / .dark.
+   ============================================================================= */
+:root[data-palette="midnight"] {
+    --radius: 0.75rem;
+
+    --background: oklch(0.9689 0.0029 264);
+    --foreground: oklch(0.3168 0.0106 268);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.3168 0.0106 268);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.3168 0.0106 268);
+
+    --primary: oklch(0.5961 0.1963 277);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.9218 0.004 260);
+    --secondary-foreground: oklch(0.3376 0.0116 264);
+    --muted: oklch(0.945 0.003 264);
+    --muted-foreground: oklch(0.51 0.012 264);
+    --accent: oklch(0.9235 0.0428 279);
+    --accent-foreground: oklch(0.4941 0.2 277);
+
+    --destructive: oklch(0.5861 0.2038 24);
+    --border: oklch(0.9048 0.0034 264);
+    --input: oklch(0.9048 0.0034 264);
+    --ring: oklch(0.5961 0.1963 277);
+
+    --status-free: oklch(0.6501 0.1567 151);
+    --status-free-soft: oklch(0.94 0.05 152);
+    --status-busy: oklch(0.8125 0.1483 82);
+    --status-busy-soft: oklch(0.9563 0.0605 90);
+    --status-billed: oklch(0.6524 0.2126 24);
+    --status-billed-soft: oklch(0.9354 0.0338 20);
+
+    --chart-1: oklch(0.5961 0.1963 277);
+    --chart-2: oklch(0.6501 0.1567 151);
+    --chart-3: oklch(0.8125 0.1483 82);
+    --chart-4: oklch(0.6524 0.2126 24);
+    --chart-5: oklch(0.51 0.012 264);
+
+    --sidebar: oklch(0.9218 0.004 260);
+    --sidebar-foreground: oklch(0.3168 0.0106 268);
+    --sidebar-primary: oklch(0.5961 0.1963 277);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.9235 0.0428 279);
+    --sidebar-accent-foreground: oklch(0.4941 0.2 277);
+    --sidebar-border: oklch(0.8848 0.0042 264);
+    --sidebar-ring: oklch(0.5961 0.1963 277);
+}
+
+:root[data-palette="midnight"].dark {
+    --background: oklch(0.3168 0.0106 268);
+    --foreground: oklch(0.9689 0.0029 264);
+    --card: oklch(0.2963 0.0093 268);
+    --card-foreground: oklch(0.9689 0.0029 264);
+    --popover: oklch(0.2963 0.0093 268);
+    --popover-foreground: oklch(0.9689 0.0029 264);
+
+    --primary: oklch(0.5961 0.1963 277);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.3743 0.0101 268);
+    --secondary-foreground: oklch(0.9689 0.0029 264);
+    --muted: oklch(0.344 0.0099 268);
+    --muted-foreground: oklch(0.7929 0.0088 260);
+    --accent: oklch(0.412 0.0855 277);
+    --accent-foreground: oklch(0.855 0.0655 278);
+
+    --destructive: oklch(0.6524 0.2126 24);
+    --border: oklch(1 0 0 / 8%);
+    --input: oklch(1 0 0 / 10%);
+    --ring: oklch(0.5961 0.1963 277);
+
+    --status-free: oklch(0.6501 0.1567 151);
+    --status-free-soft: oklch(0.335 0.055 152);
+    --status-busy: oklch(0.8125 0.1483 82);
+    --status-busy-soft: oklch(0.36 0.06 85);
+    --status-billed: oklch(0.6524 0.2126 24);
+    --status-billed-soft: oklch(0.33 0.07 22);
+
+    --chart-1: oklch(0.5961 0.1963 277);
+    --chart-2: oklch(0.6501 0.1567 151);
+    --chart-3: oklch(0.8125 0.1483 82);
+    --chart-4: oklch(0.6524 0.2126 24);
+    --chart-5: oklch(0.7929 0.0088 260);
+
+    --sidebar: oklch(0.2463 0.006 268);
+    --sidebar-foreground: oklch(0.9689 0.0029 264);
+    --sidebar-primary: oklch(0.5961 0.1963 277);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.412 0.0855 277);
+    --sidebar-accent-foreground: oklch(0.855 0.0655 278);
+    --sidebar-border: oklch(1 0 0 / 8%);
+    --sidebar-ring: oklch(0.5961 0.1963 277);
+}
+
+/* =============================================================================
+   Paleta «Fresco» — esmeralda y coral, luminosa, tipo app de delivery.
+   ============================================================================= */
+:root[data-palette="fresh"] {
+    --radius: 1.25rem;
+
+    --background: oklch(0.9928 0.0052 175);
+    --foreground: oklch(0.2077 0.0398 265);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.2077 0.0398 265);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.2077 0.0398 265);
+
+    --primary: oklch(0.6959 0.1491 162);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.9631 0.0146 175);
+    --secondary-foreground: oklch(0.2795 0.0368 260);
+    --muted: oklch(0.967 0.0088 180);
+    --muted-foreground: oklch(0.5486 0.0345 220);
+    --accent: oklch(0.9505 0.0396 172);
+    --accent-foreground: oklch(0.5537 0.1128 181);
+
+    --destructive: oklch(0.586 0.222 13);
+    --border: oklch(0.9276 0.0128 180);
+    --input: oklch(0.9276 0.0128 180);
+    --ring: oklch(0.6959 0.1491 162);
+
+    --status-free: oklch(0.6959 0.1491 162);
+    --status-free-soft: oklch(0.9505 0.0396 172);
+    --status-busy: oklch(0.7148 0.1257 215);
+    --status-busy-soft: oklch(0.9451 0.0367 219);
+    --status-billed: oklch(0.7122 0.1607 13);
+    --status-billed-soft: oklch(0.9422 0.0328 12);
+
+    --chart-1: oklch(0.6959 0.1491 162);
+    --chart-2: oklch(0.7148 0.1257 215);
+    --chart-3: oklch(0.7122 0.1607 13);
+    --chart-4: oklch(0.586 0.222 13);
+    --chart-5: oklch(0.5486 0.0345 220);
+
+    --sidebar: oklch(0.9787 0.0084 175);
+    --sidebar-foreground: oklch(0.2077 0.0398 265);
+    --sidebar-primary: oklch(0.6959 0.1491 162);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.9505 0.0396 172);
+    --sidebar-accent-foreground: oklch(0.5537 0.1128 181);
+    --sidebar-border: oklch(0.9276 0.0128 180);
+    --sidebar-ring: oklch(0.6959 0.1491 162);
+}
+
+:root[data-palette="fresh"].dark {
+    --background: oklch(0.2077 0.0398 265);
+    --foreground: oklch(0.9683 0.0069 248);
+    --card: oklch(0.2795 0.0368 260);
+    --card-foreground: oklch(0.9683 0.0069 248);
+    --popover: oklch(0.2795 0.0368 260);
+    --popover-foreground: oklch(0.9683 0.0069 248);
+
+    --primary: oklch(0.7845 0.1325 160);
+    --primary-foreground: oklch(0.2077 0.0398 265);
+    --secondary: oklch(0.3717 0.0392 257);
+    --secondary-foreground: oklch(0.9683 0.0069 248);
+    --muted: oklch(0.3341 0.0392 260);
+    --muted-foreground: oklch(0.7107 0.0351 257);
+    --accent: oklch(0.3391 0.0577 190);
+    --accent-foreground: oklch(0.8702 0.0963 180);
+
+    --destructive: oklch(0.7122 0.1607 13);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.7845 0.1325 160);
+
+    --status-free: oklch(0.7845 0.1325 160);
+    --status-free-soft: oklch(0.3269 0.0631 165);
+    --status-busy: oklch(0.7972 0.1339 211);
+    --status-busy-soft: oklch(0.3391 0.0577 215);
+    --status-billed: oklch(0.7122 0.1607 13);
+    --status-billed-soft: oklch(0.3287 0.0655 12);
+
+    --chart-1: oklch(0.7845 0.1325 160);
+    --chart-2: oklch(0.7972 0.1339 211);
+    --chart-3: oklch(0.7122 0.1607 13);
+    --chart-4: oklch(0.586 0.222 13);
+    --chart-5: oklch(0.7107 0.0351 257);
+
+    --sidebar: oklch(0.1911 0.0361 265);
+    --sidebar-foreground: oklch(0.9683 0.0069 248);
+    --sidebar-primary: oklch(0.7845 0.1325 160);
+    --sidebar-primary-foreground: oklch(0.2077 0.0398 265);
+    --sidebar-accent: oklch(0.3391 0.0577 190);
+    --sidebar-accent-foreground: oklch(0.8702 0.0963 180);
+    --sidebar-border: oklch(1 0 0 / 12%);
+    --sidebar-ring: oklch(0.7845 0.1325 160);
+}
+
+/* =============================================================================
+   Colores de serie para los gráficos.
+   Deliberadamente IGUALES en las tres paletas: el color sigue a la entidad, no
+   al tema — «ingresos» debe ser el mismo azul se mire donde se mire.
+   Validados con scripts/validate_palette.js contra las superficies reales de
+   tarjeta en claro y oscuro: banda de luminosidad, suelo de croma, separación
+   CVD (ΔE 30+ protanopía) y contraste ≥ 3:1. Todo PASS.
+   ============================================================================= */
+:root {
+    --chart-revenue: #2563EB;
+    --chart-expense: #D97706;
+}
+
+.dark {
+    /* Paso más claro: #2563EB se queda en 2,4–2,9:1 sobre las tarjetas oscuras. */
+    --chart-revenue: #3B82F6;
+    --chart-expense: #D97706;
+}
+
+/* =============================================================================
+   Firma visual
+   Tres recursos que separan una interfaz diseñada de una plantilla: una textura
+   de fondo para que las tarjetas floten sobre algo, un borde superior de luz
+   que las convierte en objetos con volumen, y la línea troquelada del ticket.
+   Van fuera de las paletas a propósito: las tres las heredan igual.
+   ============================================================================= */
+:root {
+    --grid-dot: oklch(0.55 0.03 70 / 14%);
+    --raised:
+      inset 0 1px 0 oklch(1 0 0 / 70%),
+      0 1px 2px oklch(0.25 0.02 60 / 5%),
+      0 4px 12px oklch(0.25 0.02 60 / 4%);
+    --sunken: inset 0 1px 2px oklch(0.25 0.02 60 / 6%);
+}
+
+.dark {
+    --grid-dot: oklch(1 0 0 / 7%);
+    --raised:
+      inset 0 1px 0 oklch(1 0 0 / 6%),
+      0 1px 2px oklch(0 0 0 / 35%),
+      0 4px 14px oklch(0 0 0 / 20%);
+    --sunken: inset 0 1px 3px oklch(0 0 0 / 30%);
+}
+
+/* Retícula de puntos: casi invisible de cerca, pero sin ella el fondo es un
+   vacío plano y todo lo que va encima parece pegado. */
+.bg-dots {
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      var(--grid-dot) 1px,
+      transparent 0
+    );
+    background-size: 22px 22px;
+}
+
+.raised {
+    box-shadow: var(--raised);
+}
+
+.sunken {
+    box-shadow: var(--sunken);
+}
+
+/* Desplazamiento sin barra visible. Para el rail lateral: en 56px de ancho la
+   barra se come una cuarta parte del espacio y tapa los iconos. */
+.scrollbar-none {
+    scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
+}
+
+/* El corte del ticket. Es la única licencia figurativa de toda la interfaz y
+   se la puede permitir porque el objeto que representa existe. */
+.tear-line {
+    height: 1px;
+    background-image: linear-gradient(
+      to right,
+      var(--border) 0 6px,
+      transparent 6px 12px
+    );
+    background-size: 12px 1px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+  h1, h2 {
+    @apply font-heading;
+    }
+}
