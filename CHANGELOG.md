@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.0.1
+
+### Fixed — syncing
+
+**Turning syncing on uploaded nothing that already existed.** The outbox
+triggers only fire while `enabled = 1`, so every row written before the switch
+was flipped had never passed through one. A venue that ran a single machine for
+a year turned syncing on, set up its second terminal, and that terminal came up
+with no menu, no tables and no staff — no error anywhere, because the outbox was
+simply empty. Flipping the switch now seeds the outbox from the existing data,
+in the same transaction that flips it. The catalogue travels whole; history
+travels for 90 days, which is what the server keeps before `sync_prune` deletes
+it. `sync_context.seeded_at` makes it happen once.
+
+It survived this long because every test built its database with syncing already
+on, and then the triggers do catch everything. The new check starts from a
+populated database with syncing off — the way a real venue does.
+
+**The switch in Settings bypassed its own function.** It wrote `enabled` with a
+raw `UPDATE` instead of calling `setEnabled`, so any behaviour attached to
+turning syncing on was dead code that never ran.
+
+### Added
+
+**Checks run on their own.** More than two hundred and seventy checks existed and
+only ran when someone remembered to type `npm run verify`. A GitHub Actions
+workflow now runs them, plus the frontend build, on every push and pull request —
+including the dependency bumps that nobody reads closely and that are exactly the
+ones able to break a rounding rule without saying so.
+
 ## 1.0.0
 
 First production release. What follows is not a feature list — it is the set of

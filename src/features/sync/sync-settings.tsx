@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { exec, queryOne } from "@/lib/db";
+import { setEnabled } from "@/features/sync/sync-client";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/providers/i18n-provider";
 import { useSync } from "@/providers/sync-provider";
@@ -62,8 +63,12 @@ export function SyncSettings() {
 
   const toggle = async (on: boolean) => {
     try {
-      await exec("UPDATE sync_context SET enabled = $1 WHERE id = 1", [on ? 1 : 0]);
+      // Por `setEnabled` y no por un UPDATE suelto: encender la primera vez
+      // tiene que sembrar el buzón con lo que ya hay en la base, o el terminal
+      // que se une arranca sin carta y sin personal.
+      const seeded = await setEnabled(on);
       await reload();
+      if (seeded > 0) toast.success(t("sync.seeded", { n: seeded }));
       if (on) void syncNow();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
