@@ -1,0 +1,144 @@
+# Compila el instalador de Windows y, si hay certificado, lo firma.
+#
+# ## Por qué existe
+#
+# Sin firma, SmartScreen enseña «Windows protegió su PC» la primera vez que
+# alguien ejecuta el instalador, y hay que entrar en «Más información → Ejecutar
+# de todas formas». Para un despliegue propio es asumible; delante de un cliente
+# que acaba de pagar, no.
+#
+# ## Funciona sin certificado
+#
+# Si los secretos no están puestos, compila igual y sube el instalador **sin
+# firmar**. Así el flujo sirve desde el primer día y firmar es encender un
+# interruptor, no reescribir esto.
+#
+# ## Lo que NO hace
+#
+# No publica la versión en GitHub Releases ni la sube a ningún sitio: deja los
+# instaladores como artefactos y el último paso lo da una persona. Publicar es
+# irreversible y no debería depender de que un `git push --tags` salga bien.
+#
+# ## Puesta en marcha
+#
+# Ver `docs/DEPLOY.md`, sección «Firma del ejecutable». Resumen: tres secretos
+# del repositorio —el .pfx en base64, su contraseña, y la URL de sellado de
+# tiempo— y etiquetar la versión.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Para poder probar la compilación sin publicar una versión.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # La caché de cargo. Sin esto cada versión recompila el árbol entero de
+      # Rust, que en un runner de Windows son entre diez y quince minutos.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      # Las mismas comprobaciones que en CI. Compilar un instalador a partir de
+      # código que no las pasa es fabricar el problema con más pasos.
+      - run: npm run verify
+
+      # ---------------------------------------------------------------------
+      # Certificado
+      #
+      # Tauri firma en Windows referenciando un certificado del almacén del
+      # sistema por su huella, así que no basta con tener el .pfx: hay que
+      # importarlo primero y leer la huella que le asigne el almacén. Fijar la
+      # huella a mano en `tauri.conf.json` no valdría — cambia con cada
+      # certificado y dejaría el fichero con un dato que solo sirve en una
+      # máquina.
+      # ---------------------------------------------------------------------
+      - name: Importar el certificado
+        id: cert
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PFX_BASE64)) {
+            Write-Host "Sin certificado: el instalador saldrá sin firmar."
+            "thumbprint=" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "cert.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+          $password = ConvertTo-SecureString -String $env:PFX_PASSWORD -AsPlainText -Force
+          $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          # El .pfx se borra en cuanto está en el almacén: el runner es efímero,
+          # pero un fichero menos con la clave privada dentro es un fichero menos.
+          Remove-Item $pfx -Force
+          "thumbprint=$($imported.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Certificado importado."
+
+      # La huella entra por `--config` y no por el fichero versionado: es un dato
+      # de la máquina que compila, no del proyecto.
+      - name: Compilar el instalador
+        shell: pwsh
+        env:
+          THUMBPRINT: ${{ steps.cert.outputs.thumbprint }}
+          TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:THUMBPRINT)) {
+            npm run tauri build
+          } else {
+            # Sellado de tiempo: sin él la firma caduca con el certificado y los
+            # instaladores ya distribuidos empiezan a dar aviso. Con él, siguen
+            # siendo válidos porque queda constancia de que se firmaron cuando el
+            # certificado aún valía.
+            $url = if ([string]::IsNullOrWhiteSpace($env:TIMESTAMP_URL)) { "http://timestamp.digicert.com" } else { $env:TIMESTAMP_URL }
+            $config = @{
+              bundle = @{
+                windows = @{
+                  certificateThumbprint = $env:THUMBPRINT
+                  digestAlgorithm       = "sha256"
+                  timestampUrl          = $url
+                }
+              }
+            } | ConvertTo-Json -Depth 6 -Compress
+            npm run tauri build -- --config $config
+          }
+
+      - name: Comprobar que quedó firmado
+        if: steps.cert.outputs.thumbprint != ''
+        shell: pwsh
+        run: |
+          $bad = @()
+          Get-ChildItem -Recurse -Include *.msi, *.exe src-tauri/target/release/bundle | ForEach-Object {
+            $sig = Get-AuthenticodeSignature $_.FullName
+            Write-Host "$($_.Name): $($sig.Status)"
+            if ($sig.Status -ne "Valid") { $bad += $_.Name }
+          }
+          # Un instalador sin firmar que se sube igual es peor que no firmar: se
+          # descubre en el equipo del cliente.
+          if ($bad.Count -gt 0) { throw "sin firma válida: $($bad -join ', ')" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

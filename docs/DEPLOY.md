@@ -102,12 +102,71 @@ supported.
 
 ## Code signing
 
-Without a digital signature, Windows SmartScreen warns the first time. For an
-internal rollout across a few machines that is acceptable: "More info → Run
-anyway".
+Without a digital signature, Windows SmartScreen shows "Windows protected your
+PC" the first time anyone runs the installer, and they have to click through
+"More info → Run anyway". For an internal rollout across a few machines that is
+acceptable. In front of a customer who has just paid, it is not.
 
-To distribute more widely you need a code-signing certificate (roughly 200–400
-USD a year) and the signing configuration added to `tauri.conf.json`.
+`.github/workflows/release.yml` builds the installer and signs it when a
+certificate is configured. **Without the secrets it still builds**, and uploads
+the installer unsigned — so the workflow is useful from day one and turning
+signing on is setting three secrets, not rewriting anything.
+
+### Getting a certificate
+
+An OV (organisation validated) certificate runs roughly 200–400 USD a year from
+Sectigo, DigiCert or SSL.com. Since June 2023 the private key has to live on
+certified hardware, so what arrives is either a USB token or a cloud signing
+service — **a plain `.pfx` download is no longer issued for new OV certificates.**
+That matters here: a USB token cannot be plugged into a GitHub runner, so with
+one you sign from your own machine and the workflow is only useful unsigned.
+If you want CI to sign, buy a **cloud signing** product (Azure Trusted Signing,
+SSL.com eSigner, DigiCert KeyLocker) and adapt the import step, or use an older
+`.pfx` you already hold.
+
+An EV certificate clears SmartScreen immediately instead of building reputation
+over the first few hundred installs, and costs about twice as much.
+
+### Setting up the secrets
+
+With a `.pfx` in hand, in Settings › Secrets and variables › Actions:
+
+| Secret | What goes in it |
+|---|---|
+| `WINDOWS_CERTIFICATE` | The `.pfx` in base64 — `base64 -w0 cert.pfx` on Linux, or `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx"))` in PowerShell |
+| `WINDOWS_CERTIFICATE_PASSWORD` | The password protecting the `.pfx` |
+| `WINDOWS_TIMESTAMP_URL` | Optional. Defaults to `http://timestamp.digicert.com` |
+
+Then tag a release:
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+The installers come out as a workflow artifact. Publishing them is a manual
+step on purpose: publishing is irreversible and should not hinge on a
+`git push --tags` going well.
+
+### Why the thumbprint is not in `tauri.conf.json`
+
+Tauri signs on Windows by referencing a certificate in the system store by its
+thumbprint. The thumbprint changes with every certificate and only means
+anything on the machine holding it, so committing one leaves a value in the
+repository that works nowhere else. The workflow imports the `.pfx`, reads the
+thumbprint the store assigns, and passes it through `--config` at build time.
+`tauri.conf.json` stays clean, and `npm run tauri build` on your own machine
+behaves exactly as it did before.
+
+### Timestamping
+
+The workflow timestamps every signature. Without it the signature expires with
+the certificate and installers already handed out start warning again a year
+later; with it they stay valid, because there is a record that they were signed
+while the certificate was good.
+
+It also verifies the result with `Get-AuthenticodeSignature` and fails the build
+if anything came out unsigned — an unsigned installer that ships anyway is worse
+than not signing, because it is discovered on the customer's machine.
 
 ## Automatic updates
 
