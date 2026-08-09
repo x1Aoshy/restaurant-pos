@@ -4,6 +4,16 @@ import { LoaderCircle, MapPin, Plus, Printer, Route, Trash2 } from "lucide-react
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -90,6 +100,9 @@ export function PrintersRoute() {
   const [zoneName, setZoneName] = useState("");
   const [zoneOpen, setZoneOpen] = useState(false);
   const [routeOpen, setRouteOpen] = useState(false);
+  // Era la única papelera de la aplicación que borraba en el clic. Que a veces
+  // pregunte y a veces no enseña a no leer el diálogo cuando sí aparece.
+  const [pendingRoute, setPendingRoute] = useState<PrinterRoutingRow | null>(null);
   const [routeDraft, setRouteDraft] = useState({
     zone_id: "",
     print_group: RECEIPT_GROUP,
@@ -382,10 +395,7 @@ export function PrintersRoute() {
                       variant="ghost"
                       size="icon-sm"
                       aria-label={t("common.delete")}
-                      onClick={async () => {
-                        await exec("DELETE FROM printer_routing WHERE id = $1", [r.id]);
-                        await load();
-                      }}
+                      onClick={() => setPendingRoute(r)}
                     >
                       <Trash2 />
                     </Button>
@@ -663,6 +673,42 @@ export function PrintersRoute() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={pendingRoute !== null}
+        onOpenChange={(o) => !o && setPendingRoute(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("print.deleteRouteTitle", {
+                g: pendingRoute?.print_group ?? "—",
+                p:
+                  printers.find((p) => p.id === pendingRoute?.printer_id)?.name ??
+                  "—",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("print.deleteRouteBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!pendingRoute) return;
+                await exec("DELETE FROM printer_routing WHERE id = $1", [
+                  pendingRoute.id,
+                ]);
+                setPendingRoute(null);
+                await load();
+              }}
+            >
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

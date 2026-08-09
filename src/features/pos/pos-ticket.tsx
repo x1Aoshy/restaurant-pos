@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   CircleAlert,
+  Keyboard,
   LoaderCircle,
   TicketPercent,
   Minus,
@@ -23,10 +24,92 @@ import { PaymentDialog } from "@/features/orders/payment-dialog";
 import { DiscountDialog } from "@/features/orders/discount-dialog";
 import { useSession } from "@/providers/session-provider";
 import { useTicket } from "@/features/tickets/use-ticket";
+import { openShortcuts } from "@/components/shortcuts-dialog";
 import { queryOne } from "@/lib/db";
 import type { OrderRow, PaymentMethod } from "@/types/local";
 
-export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
+/**
+ * La cantidad se teclea.
+ *
+ * Era un `<span>`: doce cervezas costaban once pulsaciones en «+». Sigue
+ * habiendo botones porque sumar de uno en uno es lo normal, pero el número ya
+ * no es solo un rótulo.
+ *
+ * Se edita sobre una copia y se aplica al salir: escribir «12» encima de un «1»
+ * pasa por un estado vacío, y aplicar cada tecla borraría la línea a mitad de
+ * escribir el número.
+ */
+function QuantityCell({
+  value,
+  label,
+  onApply,
+}: {
+  value: number;
+  label: string;
+  onApply: (quantity: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  // Escape tiene que ganarle al blur que él mismo provoca, y para entonces el
+  // estado de React todavía no se ha repintado.
+  const cancelled = useRef(false);
+
+  const apply = () => {
+    const typed = draft;
+    setDraft(null);
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
+    // Salir sin escribir nada no es pedir que se borre la línea.
+    if (typed === null || typed === "") return;
+    const n = Number.parseInt(typed, 10);
+    if (!Number.isFinite(n) || n === value) return;
+    onApply(n);
+  };
+
+  return (
+    <input
+      inputMode="numeric"
+      aria-label={label}
+      value={draft ?? String(value)}
+      onFocus={(e) => {
+        setDraft(String(value));
+        e.currentTarget.select();
+      }}
+      onChange={(e) => setDraft(e.currentTarget.value.replace(/\D/g, "").slice(0, 3))}
+      onBlur={apply}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          // Sin frenarlo aquí, el Ctrl+Enter global guardaría la comanda con la
+          // cantidad ANTERIOR: el guardado lee el estado de este mismo render.
+          e.preventDefault();
+          e.stopPropagation();
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+      className={cn(
+        "w-8 rounded-md bg-transparent py-0.5 text-center font-mono text-sm tabular-nums",
+        "transition-colors duration-150 hover:bg-background",
+        "focus:bg-background focus:outline-none focus:ring-2 focus:ring-ring",
+      )}
+    />
+  );
+}
+
+export function PosTicket({
+  draft,
+  onSave,
+  focusSearch,
+}: {
+  draft: ReturnType<typeof useDraft>;
+  onSave: () => void | Promise<void>;
+  focusSearch: () => void;
+}) {
   const { t } = useI18n();
   const {
     tableNumber,
@@ -37,8 +120,7 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
     preview,
     saving,
     setQuantity,
-    clear,
-    commit,
+    clearDraft,
     counterSale,
   } = draft;
 
@@ -176,9 +258,11 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
                 >
                   {line.quantity === 1 ? <Trash2 /> : <Minus />}
                 </Button>
-                <span className="w-6 text-center font-mono text-sm tabular-nums">
-                  {line.quantity}
-                </span>
+                <QuantityCell
+                  value={line.quantity}
+                  label={t("a11y.quantityOf", { n: line.product.name })}
+                  onApply={(q) => setQuantity(line.product.id, q)}
+                />
                 <Button
                   variant="ghost"
                   size="icon-xs"
@@ -264,7 +348,10 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={clear}
+            onClick={() => {
+              clearDraft();
+              focusSearch();
+            }}
             disabled={lines.length === 0 && tableNumber === ""}
             className="self-stretch"
           >
@@ -282,7 +369,7 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
           ) : (
             <Button
               data-tour="pos-save"
-              onClick={() => void commit()}
+              onClick={() => void onSave()}
               disabled={!canSave}
               className="h-11 flex-1 text-sm"
             >
@@ -292,6 +379,34 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
           )}
         </div>
 
+        {/* Los atajos existían y no los conocía nadie: se contaban una sola vez
+            en el tutorial y ahí se quedaban. Esta fila los deja a la vista en la
+            pantalla donde se usan, y abre la lista entera. */}
+        <button
+          type="button"
+          onClick={openShortcuts}
+          className={cn(
+            "mt-2.5 flex w-full items-center justify-center gap-2 rounded-md py-1",
+            "text-[0.65rem] text-muted-foreground transition-colors duration-150",
+            "hover:bg-accent/40 hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          <Keyboard className="size-3" />
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border border-border bg-muted px-1 font-mono text-[0.6rem]">
+              Ctrl
+            </kbd>
+            <kbd className="rounded border border-border bg-muted px-1 font-mono text-[0.6rem]">
+              ↵
+            </kbd>
+            {t("pos.save")}
+          </span>
+          <span aria-hidden className="opacity-40">
+            ·
+          </span>
+          <span>{t("keys.more")}</span>
+        </button>
       </div>
 
       <DiscountDialog

@@ -109,6 +109,9 @@ const ES: Record<string, string> = {
   "print.newRoute": "Nueva regla",
   "print.noRoutes": "Sin reglas. Nada se imprime todavía.",
   "print.routeExists": "Ya hay una regla para esa zona y ese grupo.",
+  "print.deleteRouteTitle": "¿Eliminar la regla de «{g}» hacia {p}?",
+  "print.deleteRouteBody":
+    "Ese grupo dejará de imprimirse en esa zona hasta que se cree otra regla.",
   "print.group": "Grupo",
   "print.printer": "Impresora",
   "reg.title": "Caja",
@@ -250,6 +253,25 @@ const ES: Record<string, string> = {
   "pos.noTable": "No existe la mesa {n}.",
   "pos.billedBlock":
     "La mesa {n} tiene la cuenta por cobrar. Cóbrala o cancélala antes de añadir más productos.",
+  "pos.qtyPrefix": "Se añadirán {n} unidades",
+  "pos.undo": "Deshacer",
+  "pos.cleared": "Comanda vaciada",
+  "pos.lineRemoved": "«{n}» quitado de la comanda",
+
+  "keys.title": "Atajos de teclado",
+  "keys.subtitle": "El terminal entero se maneja sin soltar el teclado.",
+  "keys.groupOrder": "Comanda",
+  "keys.groupApp": "Aplicación",
+  "keys.addFirst": "Añade el primer resultado de la búsqueda",
+  "keys.quantity": "Un número delante añade varias unidades de una vez",
+  "keys.space": "espacio",
+  "keys.save": "Guarda la comanda en la mesa escrita",
+  "keys.clearSearch": "Limpia la búsqueda",
+  "keys.help": "Abre esta lista",
+  "keys.more": "ver atajos",
+  "keys.exampleLead": "Escribe",
+  "keys.exampleTyped": "12 cerveza",
+  "keys.exampleTail": "y pulsa Enter: doce cervezas en la comanda de una vez.",
 
   "floor.title": "Mesas",
   "floor.free": "Libre",
@@ -368,6 +390,7 @@ const ES: Record<string, string> = {
 
   "a11y.addUnit": "Añadir una unidad",
   "a11y.removeUnit": "Quitar una unidad",
+  "a11y.quantityOf": "Cantidad de {n}",
   "a11y.availability": "Disponibilidad",
 
   "status.open": "Abierta",
@@ -633,6 +656,9 @@ const EN: Record<string, string> = {
   "print.newRoute": "New rule",
   "print.noRoutes": "No rules. Nothing prints yet.",
   "print.routeExists": "There is already a rule for that zone and group.",
+  "print.deleteRouteTitle": "Delete the rule sending “{g}” to {p}?",
+  "print.deleteRouteBody":
+    "That group stops printing in that zone until another rule is created.",
   "print.group": "Group",
   "print.printer": "Printer",
   "reg.title": "Cash register",
@@ -774,6 +800,25 @@ const EN: Record<string, string> = {
   "pos.noTable": "Table {n} does not exist.",
   "pos.billedBlock":
     "Table {n} has a pending bill. Settle or cancel it before adding more items.",
+  "pos.qtyPrefix": "{n} units will be added",
+  "pos.undo": "Undo",
+  "pos.cleared": "Order cleared",
+  "pos.lineRemoved": "“{n}” removed from the order",
+
+  "keys.title": "Keyboard shortcuts",
+  "keys.subtitle": "The whole terminal works without leaving the keyboard.",
+  "keys.groupOrder": "Order",
+  "keys.groupApp": "App",
+  "keys.addFirst": "Adds the first search result",
+  "keys.quantity": "A number in front adds several units at once",
+  "keys.space": "space",
+  "keys.save": "Saves the order to the table you typed",
+  "keys.clearSearch": "Clears the search",
+  "keys.help": "Opens this list",
+  "keys.more": "see shortcuts",
+  "keys.exampleLead": "Type",
+  "keys.exampleTyped": "12 beer",
+  "keys.exampleTail": "and press Enter: twelve beers on the order in one go.",
 
   "floor.title": "Tables",
   "floor.free": "Free",
@@ -892,6 +937,7 @@ const EN: Record<string, string> = {
 
   "a11y.addUnit": "Add one unit",
   "a11y.removeUnit": "Remove one unit",
+  "a11y.quantityOf": "Quantity of {n}",
   "a11y.availability": "Availability",
 
   "status.open": "Open",

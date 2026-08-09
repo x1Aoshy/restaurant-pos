@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased
+
+### Added — typing the quantity
+
+**Twelve beers took eleven presses of `+`.** The README says this is a machine
+where someone types in paper slips, and that everything works from the keyboard.
+The quantity is the thing that repeats most when transcribing a slip, and it was
+the one thing that could not be typed: `addProduct` always added one, and the
+figure between `−` and `+` was a `<span>`.
+
+Two ways in, because they suit different hands. A number in front of the search
+term — `12 cerveza`, or `12 x cerveza` — adds twelve on Enter, without taking a
+hand off the keyboard. And the figure on the line is now a field: click it, type
+over it, done. The separator between the number and the name is required on
+purpose; without it `7up` would read as seven "up" and a product whose name
+starts with a digit would stop being findable.
+
+The typed quantity is echoed in three places before it does anything — next to
+the Enter hint, in a chip under the search box, and on the product cards, since
+a click honours it too. A number that changes what a press does should not be
+invisible until after the press.
+
+### Added — undo, and the shortcuts are visible now
+
+**Removing a line was one click and gone.** It is the only action in the draft
+that destroys something already typed. Rather than a dialog, which in a rush
+gets dismissed unread, it now undoes: the line returns to *its* position, not to
+the end, because the order of the draft is the order of the paper slip. Clearing
+the whole draft undoes the same way. Saving does not offer it — by then the
+order is in the database and the slip has already come out of the kitchen
+printer.
+
+**The shortcuts existed and nobody knew.** They were mentioned once in the
+tutorial and never again. There is now a list under `Ctrl + /` (or `?` outside a
+text field), and a permanent hint at the foot of the ticket that opens it.
+
+### Fixed — focus, a missing confirmation, startup weight
+
+- The search box takes the focus back after every action that leaves it —
+  saving, clearing, adding with the mouse. `pos-catalog.tsx` already declared a
+  `searchRef` for this and never used it.
+- Deleting a print-routing rule now asks first. It was the only bin in the
+  application that deleted on the click, and a bin that asks only sometimes
+  teaches people not to read the dialog when it does appear.
+- jsPDF is loaded when a receipt is issued rather than at startup, moving 386 kB
+  (126 kB gzipped) out of the first chunk.
+
 ## 1.0.1
 
 ### Fixed — syncing, security
