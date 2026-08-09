@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import { exec, query, queryOne, type Statement } from "@/lib/db";
+import { exec, query, queryOne, transaction, type Statement } from "@/lib/db";
 import { statementFor, type RemoteChange } from "@/features/sync/tables";
+import { seedStatements } from "@/features/sync/seed";
 import { mergeStatements } from "@/features/sync/merge-orders";
 
 const DB_URL = "sqlite:pos.db";
@@ -37,8 +38,47 @@ export async function readContext(): Promise<SyncContextRow | null> {
   );
 }
 
-export async function setEnabled(on: boolean) {
-  await exec("UPDATE sync_context SET enabled = $1 WHERE id = 1", [on ? 1 : 0]);
+/**
+ * Enciende o apaga la sincronización.
+ *
+ * Encender por primera vez **siembra el buzón** con lo que ya hay en la base.
+ * Sin eso el interruptor solo levantaba una bandera: los triggers empezaban a
+ * recoger los cambios siguientes y todo lo anterior —la carta, el personal, las
+ * mesas— se quedaba sin salir nunca, así que el terminal nuevo arrancaba vacío.
+ *
+ * Las dos cosas van en la misma transacción a propósito. Si la siembra fallara
+ * a mitad con el interruptor ya encendido, quedaría un equipo sincronizando sin
+ * haber subido su catálogo, y eso no se nota hasta que alguien mira el segundo
+ * terminal y no encuentra los productos.
+ *
+ * Devuelve cuántas filas se encolaron, para poder decirlo en pantalla en vez de
+ * dejar al operador mirando una barra que no sabe si avanza.
+ */
+export async function setEnabled(on: boolean): Promise<number> {
+  if (!on) {
+    await exec("UPDATE sync_context SET enabled = 0 WHERE id = 1");
+    return 0;
+  }
+
+  const row = await queryOne<{ seeded_at: string | null }>(
+    "SELECT seeded_at FROM sync_context WHERE id = 1",
+  );
+
+  const statements: Statement[] = [
+    { sql: "UPDATE sync_context SET enabled = 1 WHERE id = 1", values: [] },
+  ];
+
+  if (!row?.seeded_at) {
+    statements.push(...seedStatements());
+    statements.push({
+      sql: "UPDATE sync_context SET seeded_at = datetime('now') WHERE id = 1",
+      values: [],
+    });
+  }
+
+  const before = await pendingCount();
+  await transaction(statements);
+  return (await pendingCount()) - before;
 }
 
 export async function pendingCount(): Promise<number> {
