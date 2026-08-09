@@ -93,6 +93,10 @@ Covered by `scripts/check-schema.mjs`: that it queues nothing while off, that it
 queues while on, that applying does not echo back, and that computed values do
 not travel.
 
+The cost of that `enabled` condition is not obvious and is dealt with in phase 5:
+rows that already existed when the switch was flipped never passed through a
+trigger, so they were never queued.
+
 ### Phase 2 — the server
 
 `supabase/sync-server.sql`. A `changes` table that stores changes in order, and
@@ -162,6 +166,44 @@ receiving the other's change: both pick the same winner, no line is lost, and
 the two totals match. Also the case of a terminal catching up from zero and
 receiving both tickets at once.
 
+### Phase 5 — the cold start
+
+`013_sync_seed.sql` and `features/sync/seed.ts`.
+
+The outbox triggers only fire while `enabled = 1`. That is right — a single
+machine should pay nothing for syncing — but it has a consequence nobody saw:
+**rows that already existed when the switch was flipped were never queued.**
+
+The real case is the only case that matters. A venue runs one machine for a
+year, buys a second one, turns syncing on, and the new terminal comes up with no
+menu, no tables and no staff. Nothing errors. Nothing is logged. The outbox is
+simply empty, so there is nothing to upload.
+
+It went unnoticed because every test built its database with syncing already on,
+and then the triggers do catch everything.
+
+Flipping the switch now dumps what is already there into the outbox, in the same
+transaction that flips it — a machine that ended up enabled without having
+uploaded its catalogue would look fine until someone walked over to the second
+terminal. `sync_context.seeded_at` makes it happen once; turning it off and on
+again does not re-dump what in a venue with history is tens of thousands of rows.
+
+Two boundaries worth knowing:
+
+- **The catalogue travels whole.** Menu, staff, tables, zones, printers, routing
+  and recipes are small, and without them the new terminal cannot open a ticket.
+- **History travels for 90 days**, plus anything still live regardless of age.
+  Ninety because that is what the server keeps: `sync_prune` deletes the change
+  log older than that, so seeding further back would upload rows for someone
+  else to delete.
+
+Covered by `scripts/check-seed.mjs`, and the test that matters is not the row
+count — it is the round trip. A populated machine with syncing off is switched
+on, and everything the seed queues is applied to a second empty database through
+`statementFor`, the same path a real change takes. Both databases must then
+agree, including the values that never travelled: the new terminal reaches the
+same ticket total and the same stock on its own.
+
 ## Setting it up
 
 1. Create a Supabase project and run `supabase/sync-server.sql` in its SQL
@@ -174,9 +216,13 @@ receiving both tickets at once.
    (Project Settings › API › anon) and the venue key from step 2. Save and flip
    the switch.
 
-The first terminal uploads everything in its outbox; the others receive it at
-startup. Before switching this on, make sure **every** PIN is six digits: their
-hashes travel in the change log.
+Flipping the switch on the machine that already holds the data queues its
+catalogue and its recent history (see phase 5); the others receive all of it at
+startup. Turn it on there first and let it finish uploading — the badge in the
+title bar stops showing pending changes — before setting up the second terminal.
+
+Before switching this on, make sure **every** PIN is six digits: their hashes
+travel in the change log.
 
 ### Without Supabase
 
