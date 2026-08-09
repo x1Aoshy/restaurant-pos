@@ -69,6 +69,39 @@ out **with no warning and no error**, and the copy looks fine right up until the
 day you need it. The app uses `VACUUM INTO`, which produces a consistent file
 while the app is open and in the middle of service.
 
+#### On close
+
+Beyond the schedule, the app backs up **when you close it**. That is the copy
+worth the most: the scheduled ones land mid-service and capture half a shift,
+while this one captures the whole day, closed and reconciled — which is the
+state anyone would actually want back.
+
+It never stops you closing. If the backup disk is not plugged in at eleven at
+night, the failure is recorded and the app closes anyway; there is also a
+**Close without backing up** button from the first second. Blocking the exit
+teaches staff to kill the process from Task Manager, which loses the backups
+that were working too.
+
+Closing again within ten minutes does not make a second copy — configuring
+printers should not push the copies that matter out of the folder. The skip is
+recorded, so the history explains itself rather than showing a gap.
+
+#### History
+
+**Settings › Backups › History** lists the last 20 attempts with their reason
+(scheduled, manual, on close) and result. `backups` only ever held the last one,
+which does not answer the question people actually ask when something smells
+wrong: *since when?* A USB unplugged on Tuesday and plugged back in on Friday
+left exactly the same trace as if nothing had happened.
+
+The pattern is what names the cause. Scheduled ones landing and close ones
+missing is not a folder problem — it is somebody turning the machine off at the
+wall. An entry stuck on **Unfinished** means the process died mid-copy.
+
+That last case leaves nothing dangerous behind: the copy is written as `.part`
+and renamed only once complete, so an interrupted one is neither counted nor
+kept nor mistaken for a good backup.
+
 ### Restoring
 
 Same screen, at the bottom: **Restore a backup**. You pick the file, the app

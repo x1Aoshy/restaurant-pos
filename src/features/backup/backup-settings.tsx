@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { exec } from "@/lib/db";
 import { useI18n } from "@/providers/i18n-provider";
 import { useBackup } from "@/features/backup/use-backup";
+import { BackupLog } from "@/features/backup/backup-log";
 import {
   RestoreDialog,
   type RestoreCandidate,
@@ -253,6 +254,8 @@ export function BackupSettings() {
           </div>
         </div>
       </div>
+
+      <BackupLog refreshKey={row?.last_at ?? null} running={running} />
 
       {/* Restaurar vive aquí abajo, separado y en rojo, porque es la única
           acción de la aplicación que borra trabajo hecho: todo lo cobrado desde
