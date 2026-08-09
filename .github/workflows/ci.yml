@@ -1,0 +1,54 @@
+# Ejecuta las comprobaciones en cada cambio.
+#
+# Hasta ahora `npm run verify` solo corría cuando alguien se acordaba de
+# escribirlo. Son más de doscientas comprobaciones —redondeos, arqueo,
+# descuentos, la lista blanca de la sincronización— y ninguna sirve de nada si
+# no se ejecutan antes de mezclar.
+#
+# Importa sobre todo para los cambios de dependencias que abre Dependabot: son
+# los que nadie lee con atención, y son exactamente los que pueden romper un
+# cálculo sin que se note hasta que una caja no cuadra.
+#
+# Lo que NO hace: compilar el instalador de Windows. Eso necesita la cadena de
+# Rust y unos diez minutos, y lo que vigila esta comprobación —el esquema, el
+# dinero y los idiomas— no depende de ello. El instalador se genera al publicar.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Un empujón nuevo cancela la ejecución anterior de la misma rama: lo que
+# interesa es el último estado, no la cola entera.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 y no una anterior: las comprobaciones ejecutan el esquema contra
+      # `node:sqlite`, que no existe hasta la 22.5. Con Node 20 la instalación
+      # va bien y `verify` falla con un error que no se parece a la causa.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      # `verify` encadena tipos, migraciones, idiomas y las ocho suites de
+      # esquema contra un SQLite de verdad.
+      - run: npm run verify
+
+      # Que el frontend compile de verdad. `tsc --noEmit` de `verify` revisa los
+      # tipos, pero no que Vite sepa resolver y empaquetar lo que hay.
+      - run: npm run build
