@@ -105,6 +105,43 @@ $$;
 revoke execute on function public.venue_of(text) from public;
 
 -- -----------------------------------------------------------------------------
+-- Nombres que NO son tablas y que sin embargo el receptor encuentra.
+--
+-- El terminal que recibe busca la tabla en un objeto de JavaScript. Un índice a
+-- secas recorre también `Object.prototype`, así que `constructor`, `toString` o
+-- `__proto__` devuelven algo, pasan el filtro y revientan un par de líneas más
+-- abajo. La excepción sube antes de que se aplique nada: `last_seq` no avanza y
+-- el equipo vuelve a pedir el mismo lote —con el mismo mensaje dentro— cada
+-- treinta segundos, para siempre. Basta uno para dejar sin sincronización de
+-- entrada a todos los terminales del local.
+--
+-- Arreglado ya en el terminal, que es donde se construye el SQL y por tanto
+-- donde está la frontera de verdad. Esto es la segunda vuelta de llave, y sirve
+-- para lo que el arreglo del terminal no puede: un local con una máquina sin
+-- actualizar sigue protegido, porque el mensaje no llega a guardarse.
+--
+-- Esto NO ata el servidor al esquema del POS. No es una lista de tablas
+-- válidas —eso obligaría a migrar el servidor cada vez que el POS añada una, que
+-- es justo lo que este diseño evita—: es una lista de nombres que ninguna tabla
+-- va a tener nunca.
+-- -----------------------------------------------------------------------------
+create or replace function public.is_reserved_table_name(p_name text)
+returns boolean
+language sql
+immutable
+as $$
+  -- En minúsculas TODAS: se comparan contra `lower(...)`, y una sola entrada
+  -- con mayúsculas dentro no coincidiría jamás y no lo diría nadie.
+  select lower(coalesce(p_name, '')) in (
+    'constructor', '__proto__', '__definegetter__', '__definesetter__',
+    '__lookupgetter__', '__lookupsetter__', 'hasownproperty', 'isprototypeof',
+    'propertyisenumerable', 'tostring', 'tolocalestring', 'valueof'
+  );
+$$;
+
+revoke execute on function public.is_reserved_table_name(text) from public;
+
+-- -----------------------------------------------------------------------------
 -- Subir. Recibe el buzón de un terminal y devuelve cuántos entraron.
 --
 -- `p_changes` es un array JSON de {table_name, row_id, op, payload}.
@@ -122,9 +159,23 @@ as $$
 declare
   v_venue uuid := public.venue_of(p_token);
   v_last  bigint;
+  v_bad   text;
 begin
   if v_venue is null then
     raise exception 'clave de local no válida' using errcode = '28000';
+  end if;
+
+  -- Se rechaza la tanda entera y no se descarta el mensaje malo en silencio.
+  -- Descartarlo dejaría al terminal creyendo que subió algo que no subió, y ese
+  -- hueco no se nota hasta que alguien busca una comanda que no está. Así el
+  -- fallo se queda en la máquina que lo produce, que es la que hay que mirar.
+  select c->>'table_name' into v_bad
+    from jsonb_array_elements(coalesce(p_changes, '[]'::jsonb)) as c
+   where public.is_reserved_table_name(c->>'table_name')
+   limit 1;
+
+  if v_bad is not null then
+    raise exception 'nombre de tabla no admitido: %', v_bad using errcode = '22023';
   end if;
 
   insert into public.changes (venue_id, device_id, table_name, row_id, op, payload)

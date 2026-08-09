@@ -1,6 +1,6 @@
 # Security — x1Aoshy POS
 
-State as of migration `012`, version `1.0.0`.
+State as of migration `012`, version `1.0.1`.
 
 ## Where the real boundary is
 
@@ -116,6 +116,50 @@ delete and nothing more.
 Restoring is built too, and validates the file before touching anything. The
 database being replaced is kept as `pos.db.replaced` rather than deleted.
 
+### The whitelist could be walked around by name — FIXED in 1.0.1
+
+The receiving side checks every incoming change against a list of tables it
+accepts, because table and column names cannot travel as query parameters and so
+end up concatenated into the SQL. That list is a JavaScript object, and it was
+being read with a plain index.
+
+A plain index also finds what the object inherits. `constructor`, `toString`,
+`valueOf` and `__proto__` all return something that is not null, so they passed
+the "is this table on the list?" check and fell through to code that read fields
+those values do not have. The result was a thrown `TypeError`, in the one
+function whose contract is that it never throws.
+
+What that cost was not the rejected message. The exception travelled up before
+anything was applied, so `last_seq` never moved, and the terminal asked for the
+same batch — poisoned message still in it — every thirty seconds, forever.
+**One message was enough to kill inbound syncing on every terminal in the
+venue**, with nothing on screen but "network error", which points somewhere
+else entirely. It needed no more privilege than the venue token, which sits in
+the local database on any terminal; and the message sat on the server for the
+ninety days `sync_prune` takes to sweep it.
+
+Fixed in two places:
+
+- **The terminal** looks the table up as an *own* property and ignores anything
+  it did not declare itself. This is the real fix: the terminal is where the SQL
+  is built, so it is where the boundary is.
+- **The server** refuses to store a change whose table name is one of those
+  inherited names. This is the second turn of the key, and it covers what the
+  terminal fix cannot: a venue with one machine still on an older build. It does
+  not tie the server to the POS schema — it is not a list of valid tables, which
+  would mean migrating the server every time the POS adds one. It is a list of
+  names no table will ever have.
+
+**Existing servers must re-run `supabase/sync-server.sql`.** It is written to be
+re-runnable; without it the terminals are still fixed, but the poisoned message
+can still be stored for older ones to choke on.
+
+Two neighbouring cases were closed the same way, both of which ended in a wedged
+terminal rather than a wrong number: a live order arriving without `id`,
+`table_id` or `created_at` — the merge rule reads those from the raw payload,
+before the whitelist — and a `sync_pull` response that is not a list, which is
+what a captive wifi portal answers with.
+
 ### The sync outbox carries PIN hashes — WORTH KNOWING
 
 `sync_outbox` includes `staff.pin_hash`, because without it nobody could sign in
@@ -126,6 +170,50 @@ Turning it on means PIN hashes exist on a third party's system. They are PBKDF2
 with 210,000 iterations, not PINs in the clear. The minimum is already **six
 digits** precisely because of this: with four there are ten thousand
 combinations and the whole space can be tried in a while even at that cost.
+
+### Syncing makes one compromised terminal everybody's problem — WORTH KNOWING
+
+Off, the boundary is the one at the top of this file: the machine. On, it is the
+machine **and** the venue token, which lives in that same unencrypted file on
+every terminal. Whoever reads one terminal's `pos.db` can push changes to all of
+them, and three of the whitelisted columns are worth naming:
+
+- **`staff.pin_hash` and `staff.role`.** A pushed row can set an existing
+  account's PIN to one the pusher chose, or raise their own account to `admin`.
+  It arrives on every terminal as an ordinary change. `role` is constrained to
+  the four valid values, so this is not an escape from the schema — but `admin`
+  is one of the four.
+- **`printers.address`.** The address is not fixed at build time; it is a row,
+  and the Rust side connects wherever it says. Rewrite it and receipts print
+  somewhere else — which means the order data on them goes somewhere else.
+
+None of this is new in kind: the Users screen already says roles organise rather
+than protect, and one machine with a shared Windows session was always enough to
+read everything on that machine. What syncing changes is the *reach* — from one
+terminal to the whole venue. The mitigations are the ordinary ones and they are
+worth doing before turning the switch on: one Windows account per person,
+BitLocker on any machine that can leave, and a venue token that is rotated (via
+`create_venue`) when somebody leaves who had access to a terminal.
+
+### Backups are written outside the sandbox — DELIBERATE
+
+The interface can only write files to Documents, Downloads and Desktop. Backups
+do not go through that: `db_backup` is a Rust command and writes wherever it is
+pointed, so it can reach the destination this document asks for — a USB stick,
+or a folder on another disk. Narrowing it to the three sandboxed folders would
+forbid exactly the destination that makes a backup worth having. The path comes
+from the native folder picker, and the command refuses to overwrite an existing
+file, but it is worth knowing the allowlist above does not cover this.
+
+### PIN attempts are not throttled — ACCEPTED
+
+Nothing counts failures or slows down after a run of them. On its own that would
+matter; here it does not change much, because the 210,000 iterations are the
+cost either way and anybody who can run attempts against the file can skip the
+app entirely and read the hashes directly. Six digits and PBKDF2 are what stand
+between a stolen file and the PINs. A lockout would protect against someone
+standing at the keyboard guessing, which is the case the Windows session lock
+already covers better.
 
 ### The file is not encrypted — ACCEPTED
 

@@ -38,6 +38,36 @@ function isLive(status: unknown): boolean {
 }
 
 /**
+ * Saca de un mensaje la cuenta viva que describe, o `null` si no la describe.
+ *
+ * Los tres campos se comprueban porque esto corre ANTES de la lista blanca de
+ * `tables.ts` y con el payload en crudo. Sin la comprobación, una cuenta que
+ * llegue sin `id` acaba en un `INSERT INTO orders` con la clave a nulo: la
+ * restricción lo rechaza, y como todo el lote va en una sola transacción, el
+ * rechazo se lleva por delante los cambios buenos que venían al lado. Peor
+ * todavía, `last_seq` no llega a avanzar, así que el terminal vuelve a pedir el
+ * mismo lote cada treinta segundos y no vuelve a recibir nada nunca.
+ *
+ * Descartar es lo correcto y no una rendición: una cuenta sin identificador no
+ * se puede fusionar con nada, y el cambio normal que venga detrás tampoco va a
+ * poder aplicarla.
+ */
+function liveOrderOf(change: RemoteChange): LiveOrder | null {
+  if (!change || typeof change !== "object") return null;
+  if (change.table_name !== "orders" || change.op !== "upsert") return null;
+  const payload = change.payload;
+  if (!payload || typeof payload !== "object") return null;
+  if (!isLive((payload as { status?: unknown }).status)) return null;
+
+  const { id, table_id: tableId, created_at: createdAt } = payload as Record<string, unknown>;
+  if (typeof id !== "string" || id === "") return null;
+  if (typeof tableId !== "string" || tableId === "") return null;
+  if (typeof createdAt !== "string" || createdAt === "") return null;
+
+  return { id, table_id: tableId, created_at: createdAt };
+}
+
+/**
  * La fusión se parte en dos momentos y no es un capricho de orden:
  *
  * - `before`: dejar de estar viva la cuenta absorbida. Tiene que ir ANTES de
@@ -54,18 +84,12 @@ export interface MergePlan {
 }
 
 export async function mergeStatements(changes: RemoteChange[]): Promise<MergePlan> {
-  const incoming = changes.filter(
-    (c) =>
-      c.table_name === "orders" &&
-      c.op === "upsert" &&
-      c.payload &&
-      isLive((c.payload as { status?: unknown }).status),
-  );
+  const incoming = changes
+    .map(liveOrderOf)
+    .filter((o): o is LiveOrder => o !== null);
   if (incoming.length === 0) return { before: [], after: [], merged: 0 };
 
-  const tableIds = Array.from(
-    new Set(incoming.map((c) => String((c.payload as { table_id: string }).table_id))),
-  );
+  const tableIds = Array.from(new Set(incoming.map((o) => o.table_id)));
 
   const holes = tableIds.map((_, i) => `$${i + 1}`).join(", ");
   const rows = await query<LiveOrder>(
@@ -88,18 +112,7 @@ export async function mergeStatements(changes: RemoteChange[]): Promise<MergePla
   const after: Statement[] = [];
   let merged = 0;
 
-  for (const change of incoming) {
-    const payload = change.payload as {
-      id: string;
-      table_id: string;
-      created_at: string;
-    };
-    const candidate: LiveOrder = {
-      id: payload.id,
-      table_id: payload.table_id,
-      created_at: payload.created_at,
-    };
-
+  for (const candidate of incoming) {
     const current = holder.get(candidate.table_id);
     if (!current) {
       holder.set(candidate.table_id, candidate);

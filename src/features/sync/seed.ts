@@ -1,5 +1,5 @@
 import type { Statement } from "@/lib/db";
-import { SYNCED_TABLES } from "@/features/sync/tables";
+import { specFor } from "@/features/sync/tables";
 
 /**
  * Volcado inicial del buzón al encender la sincronización.
@@ -101,7 +101,13 @@ const SEED_ORDER: SeedSpec[] = [
  */
 export function seedStatements(): Statement[] {
   return SEED_ORDER.map(({ table, rowId, where }) => {
-    const spec = SYNCED_TABLES[table];
+    // Por `specFor` y no por un índice suelto: la misma búsqueda por propiedad
+    // propia que usa el lado que recibe. Aquí los nombres son constantes del
+    // programa, así que no hay nada que explotar; lo que se gana es que este
+    // guardia diga la verdad. Con el índice a secas, un nombre heredado de
+    // `Object.prototype` lo habría esquivado y la siembra habría salido con
+    // columnas inventadas en lugar de parar.
+    const spec = specFor(table);
     if (!spec) throw new Error(`siembra: «${table}» no está en la lista blanca`);
 
     const pairs = spec.columns.map((c) => `'${c}', ${c}`).join(", ");
