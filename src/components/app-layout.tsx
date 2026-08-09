@@ -2,6 +2,7 @@ import { Outlet, useLocation } from "react-router";
 
 import { AdminNav } from "@/components/admin-nav";
 import { AppSidebar } from "@/components/app-sidebar";
+import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { useSession } from "@/providers/session-provider";
 
 export function AppLayout() {
@@ -26,6 +27,10 @@ export function AppLayout() {
       >
         <Outlet />
       </div>
+
+      {/* En la raíz: los atajos se piden desde cualquier pantalla, no solo
+          desde la que los usa. */}
+      <ShortcutsDialog />
     </div>
   );
 }

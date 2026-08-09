@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { CornerDownLeft, Search } from "lucide-react";
+import { useMemo, useState, type RefObject } from "react";
+import { CornerDownLeft, Search, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,23 +10,60 @@ import { formatCents } from "@/lib/format";
 import { formatBp } from "@/lib/money";
 import { useI18n } from "@/providers/i18n-provider";
 import { useMenu } from "@/providers/menu-provider";
+import { MAX_QUANTITY } from "@/features/pos/use-draft";
 import type { ProductRow } from "@/types/local";
 
-export function PosCatalog({ onAdd }: { onAdd: (product: ProductRow) => void }) {
+/**
+ * «12 cerveza» son doce cervezas.
+ *
+ * La cantidad es lo que más se repite al transcribir una nota de papel, y era
+ * lo único que no se podía teclear: doce unidades eran once pulsaciones en el
+ * botón «+». El número va delante porque es como se lee la nota.
+ *
+ * Hace falta un separador —espacio, x o *— a propósito. Sin él, «7up» se leería
+ * como siete «up», y un producto que empieza por número dejaría de encontrarse.
+ */
+const WITH_SIGN = /^(\d{1,3})\s*[x*×]\s*(.+)$/;
+const WITH_SPACE = /^(\d{1,3})\s+(.+)$/;
+
+function parseSearch(raw: string): { quantity: number; term: string } {
+  const m = raw.match(WITH_SIGN) ?? raw.match(WITH_SPACE);
+  if (!m) return { quantity: 1, term: raw };
+  const n = Number.parseInt(m[1], 10);
+  if (!Number.isFinite(n) || n < 1) return { quantity: 1, term: raw };
+  return { quantity: Math.min(n, MAX_QUANTITY), term: m[2] };
+}
+
+export function PosCatalog({
+  onAdd,
+  searchRef,
+}: {
+  onAdd: (product: ProductRow, quantity: number) => void;
+  /** Vive en la ruta: el foco vuelve aquí también al guardar la comanda. */
+  searchRef: RefObject<HTMLInputElement | null>;
+}) {
   const { products, categories, loading } = useMenu();
   const { t } = useI18n();
   const [category, setCategory] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
+
+  const { quantity, term } = useMemo(() => parseSearch(query), [query]);
 
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = term.trim().toLowerCase();
     return products.filter(
       (p) =>
         (category === null || p.category === category) &&
         (q === "" || p.name.toLowerCase().includes(q)),
     );
-  }, [products, category, query]);
+  }, [products, category, term]);
+
+  /** Añadir siempre limpia y devuelve el foco: la nota sigue en la mano. */
+  const add = (product: ProductRow) => {
+    onAdd(product, quantity);
+    setQuery("");
+    searchRef.current?.focus();
+  };
 
   return (
     <div data-tour="pos-catalog" className="flex min-h-0 flex-1 flex-col">
@@ -45,21 +82,53 @@ export function PosCatalog({ onAdd }: { onAdd: (product: ProductRow) => void }) 
               if (e.ctrlKey || e.metaKey) return;
               if (e.key === "Enter" && visible.length > 0) {
                 e.preventDefault();
-                onAdd(visible[0]);
-                setQuery("");
+                add(visible[0]);
               }
               if (e.key === "Escape") setQuery("");
             }}
             placeholder={t("pos.search")}
-            className="pl-8"
+            className={cn("pl-8", quantity > 1 && "pr-24")}
           />
+
+          {/* El eco de lo que hará Enter. Es la única pista permanente de que
+              el atajo existe, así que enseña también la cantidad leída. */}
           {query && visible.length > 0 ? (
-            <span className="pointer-events-none absolute right-2.5 top-1/2 flex -translate-y-1/2 items-center gap-1 text-[0.65rem] text-muted-foreground">
-              <CornerDownLeft className="size-3" />
-              {visible[0].name}
+            <span className="pointer-events-none absolute right-2.5 top-1/2 flex max-w-[60%] -translate-y-1/2 items-center gap-1 text-[0.65rem] text-muted-foreground">
+              <CornerDownLeft className="size-3 shrink-0" />
+              {quantity > 1 ? (
+                <span className="shrink-0 font-mono font-semibold tabular-nums text-primary">
+                  {quantity}×
+                </span>
+              ) : null}
+              <span className="truncate">{visible[0].name}</span>
             </span>
           ) : null}
         </div>
+
+        {/* La cantidad tecleada, dicha en voz alta. Un «12» suelto delante del
+            texto se lee como parte del nombre hasta que algo confirma que se
+            entendió como cantidad. */}
+        {quantity > 1 ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono font-semibold tabular-nums text-primary">
+              {quantity}×
+            </span>
+            <span className="min-w-0 flex-1 truncate">
+              {t("pos.qtyPrefix", { n: quantity })}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-label={t("lock.clearSearch")}
+              onClick={() => {
+                setQuery(term);
+                searchRef.current?.focus();
+              }}
+            >
+              <X />
+            </Button>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-1.5">
           <Button
@@ -92,16 +161,28 @@ export function PosCatalog({ onAdd }: { onAdd: (product: ProductRow) => void }) 
                 <button
                   key={product.id}
                   type="button"
-                  onClick={() => onAdd(product)}
+                  onClick={() => add(product)}
                   className={cn(
-                    "flex min-h-[5.25rem] flex-col justify-between rounded-2xl border border-border bg-card p-3.5 text-left",
+                    "relative flex min-h-[5.25rem] flex-col justify-between rounded-2xl border border-border bg-card p-3.5 text-left",
                     "transition-all duration-200 ease-in-out",
                     "hover:-translate-y-0.5 hover:border-primary/50 hover:bg-accent/50 hover:shadow-md hover:shadow-foreground/5",
                     "active:translate-y-0 active:scale-[0.98]",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   )}
                 >
-                  <span className="line-clamp-2 text-sm font-medium leading-snug tracking-tight">
+                  {/* Con cantidad tecleada, el clic también la respeta. La
+                      tarjeta lo dice para que no sorprenda después. */}
+                  {quantity > 1 ? (
+                    <span className="absolute right-2 top-2 rounded-md bg-primary px-1.5 py-0.5 font-mono text-[0.6rem] font-semibold tabular-nums text-primary-foreground">
+                      {quantity}×
+                    </span>
+                  ) : null}
+                  <span
+                    className={cn(
+                      "line-clamp-2 text-sm font-medium leading-snug tracking-tight",
+                      quantity > 1 && "pr-8",
+                    )}
+                  >
                     {product.name}
                   </span>
                   <span className="mt-2 flex items-baseline justify-between gap-2">

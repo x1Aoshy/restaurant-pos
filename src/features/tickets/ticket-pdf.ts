@@ -1,4 +1,4 @@
-import { jsPDF } from "jspdf";
+import type { jsPDF } from "jspdf";
 
 import { SUPPORTED_CURRENCIES, isSupportedCurrency } from "@/lib/format";
 import { formatBp } from "@/lib/money";
@@ -109,7 +109,7 @@ function money(cents: number, currency: string) {
  * así que una página de alto fijo dejaría un palmo de papel en blanco por
  * ticket.
  */
-function buildPosTicket(data: TicketData): jsPDF {
+function buildPosTicket(data: TicketData, JsPDF: JsPdfCtor): jsPDF {
   const { settings, labels } = data;
   const currency = settings.currency || "USD";
 
@@ -133,7 +133,7 @@ function buildPosTicket(data: TicketData): jsPDF {
     (settings.ticket_footer ? 12 : 0) +
     26;
 
-  const doc = new jsPDF({ unit: "mm", format: [W, height] });
+  const doc = new JsPDF({ unit: "mm", format: [W, height] });
   let y = 7;
 
   const rule = (dashed = false) => {
@@ -299,13 +299,13 @@ function buildPosTicket(data: TicketData): jsPDF {
 }
 
 /** Hoja A4, para quien no tiene impresora de barra. */
-function buildA4Ticket(data: TicketData): jsPDF {
+function buildA4Ticket(data: TicketData, JsPDF: JsPdfCtor): jsPDF {
   const { settings, labels } = data;
   const currency = settings.currency || "USD";
   const PAGE_W = 210;
   const M = 18;
   const RIGHT = PAGE_W - M;
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = new JsPDF({ unit: "mm", format: "a4" });
   let y = M + 4;
 
   const hairline = (x1: number, x2: number, at: number, color = LINE, w = 0.15) => {
@@ -483,10 +483,23 @@ function buildA4Ticket(data: TicketData): jsPDF {
   return doc;
 }
 
-export function buildTicketPdf(data: TicketData): jsPDF {
+/**
+ * jsPDF entra aquí y no arriba del archivo.
+ *
+ * Es la dependencia más pesada del paquete y solo hace falta cuando se emite un
+ * ticket, no al abrir el terminal. Importada de forma estática viajaba en el
+ * primer trozo que carga la aplicación, y con ella su tipografía empotrada.
+ *
+ * El coste es que la primera emisión resuelve el módulo; a partir de ahí queda
+ * en memoria y las siguientes son inmediatas.
+ */
+type JsPdfCtor = typeof import("jspdf").jsPDF;
+
+export async function buildTicketPdf(data: TicketData): Promise<jsPDF> {
+  const { jsPDF: JsPDF } = await import("jspdf");
   return data.settings.ticket_format === "a4"
-    ? buildA4Ticket(data)
-    : buildPosTicket(data);
+    ? buildA4Ticket(data, JsPDF)
+    : buildPosTicket(data, JsPDF);
 }
 
 export function ticketFileName(data: TicketData) {

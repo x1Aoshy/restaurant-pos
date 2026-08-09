@@ -110,7 +110,7 @@ export function useTicket() {
         const printed = await printReceipt(ticket, method === "cash");
 
         const result = await saveTicketPdf(
-          buildTicketPdf(ticket),
+          await buildTicketPdf(ticket),
           ticketFileName(ticket),
         );
         if (printed) {

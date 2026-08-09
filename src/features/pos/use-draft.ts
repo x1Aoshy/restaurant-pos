@@ -14,6 +14,15 @@ export interface DraftLine {
   quantity: number;
 }
 
+/** Tope alto y arbitrario: nadie apunta mil unidades, pero un dedo pegado al
+ *  teclado numérico sí puede escribirlas, y de ahí sale un total absurdo. */
+export const MAX_QUANTITY = 999;
+
+function clampQuantity(n: number) {
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(1, Math.min(MAX_QUANTITY, Math.trunc(n)));
+}
+
 /**
  * El POS construye la comanda en memoria y la guarda de una vez.
  *
@@ -44,28 +53,79 @@ export function useDraft() {
 
   const existingOrder = table ? liveOrders[table.id] : undefined;
 
-  const addProduct = useCallback((product: ProductRow) => {
+  const addProduct = useCallback((product: ProductRow, quantity = 1) => {
+    const n = clampQuantity(quantity);
     setLines((prev) => {
       const i = prev.findIndex((l) => l.product.id === product.id);
-      if (i === -1) return [...prev, { product, quantity: 1 }];
+      if (i === -1) return [...prev, { product, quantity: n }];
       const next = prev.slice();
-      next[i] = { ...next[i], quantity: next[i].quantity + 1 };
+      next[i] = { ...next[i], quantity: clampQuantity(next[i].quantity + n) };
       return next;
     });
   }, []);
 
-  const setQuantity = useCallback((productId: string, quantity: number) => {
-    setLines((prev) =>
-      quantity <= 0
-        ? prev.filter((l) => l.product.id !== productId)
-        : prev.map((l) => (l.product.id === productId ? { ...l, quantity } : l)),
-    );
-  }, []);
+  /**
+   * Quitar una línea es la única acción del borrador que destruye algo escrito,
+   * y llega por una pulsación sola. En vez de un diálogo que en hora punta se
+   * despacha sin leer, se deshace: la línea vuelve a SU sitio, no al final,
+   * porque el orden del borrador es el de la nota de papel que se transcribe.
+   */
+  const setQuantity = useCallback(
+    (productId: string, quantity: number) => {
+      if (quantity > 0) {
+        const n = clampQuantity(quantity);
+        setLines((prev) =>
+          prev.map((l) => (l.product.id === productId ? { ...l, quantity: n } : l)),
+        );
+        return;
+      }
+
+      const index = lines.findIndex((l) => l.product.id === productId);
+      if (index === -1) return;
+      const removed = lines[index];
+
+      setLines((prev) => prev.filter((l) => l.product.id !== productId));
+      toast(t("pos.lineRemoved", { n: removed.product.name }), {
+        action: {
+          label: t("pos.undo"),
+          // Si mientras tanto se volvió a añadir el producto, restaurar
+          // duplicaría la línea. Se comprueba contra el estado del momento.
+          onClick: () =>
+            setLines((cur) =>
+              cur.some((l) => l.product.id === productId)
+                ? cur
+                : [...cur.slice(0, index), removed, ...cur.slice(index)],
+            ),
+        },
+      });
+    },
+    [lines, t],
+  );
 
   const clear = useCallback(() => {
     setLines([]);
     setTableNumber("");
   }, []);
+
+  /**
+   * Vaciar a mano, con vuelta atrás. `clear` se queda para el uso interno de
+   * guardar y cobrar, donde ofrecer deshacer sería mentir: la comanda ya está
+   * en la base y el papel ya salió por la impresora de cocina.
+   */
+  const clearDraft = useCallback(() => {
+    if (lines.length === 0 && tableNumber === "") return;
+    const snapshot = { lines, tableNumber };
+    clear();
+    toast(t("pos.cleared"), {
+      action: {
+        label: t("pos.undo"),
+        onClick: () => {
+          setLines(snapshot.lines);
+          setTableNumber(snapshot.tableNumber);
+        },
+      },
+    });
+  }, [lines, tableNumber, clear, t]);
 
   const preview = useMemo(() => {
     // Si la mesa ya tiene cuenta, la base aplicará la tasa CONGELADA en ella,
@@ -301,7 +361,7 @@ export function useDraft() {
     saving,
     addProduct,
     setQuantity,
-    clear,
+    clearDraft,
     commit,
     counterSale,
   };

@@ -179,7 +179,7 @@ export function SettingsRoute() {
         ...sample,
       };
       const result = await saveTicketPdf(
-        buildTicketPdf(ticket),
+        await buildTicketPdf(ticket),
         ticketFileName(ticket),
       );
       if (result.status === "out_of_scope") toast.error(t("toast.scopeFolders"));
