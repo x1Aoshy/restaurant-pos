@@ -71,6 +71,60 @@ for (const c of rejected) {
   check(`rechaza: ${c.name}`, statementFor(c), null);
 }
 
+// --- 1b. Nombres heredados de Object.prototype -----------------------------
+//
+// La lista blanca es un objeto, y `SYNCED_TABLES[nombre]` a secas recorre
+// también la cadena de prototipos: `constructor` devuelve una función y
+// `__proto__` el prototipo, las dos cosas distintas de nulo. Pasaban el
+// `if (!table)` y el `table.pk` de la línea siguiente lanzaba.
+//
+// Lo que se perdía no era ese mensaje. La excepción sube hasta `pullChanges`
+// antes de aplicar nada, así que `last_seq` se queda quieto y el terminal vuelve
+// a pedir el mismo lote —con el mismo mensaje dentro— cada treinta segundos. Un
+// solo mensaje así deja sin sincronización de entrada a todos los equipos del
+// local hasta que alguien borre la fila del servidor a mano.
+for (const name of [
+  "constructor",
+  "__proto__",
+  "toString",
+  "valueOf",
+  "hasOwnProperty",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+]) {
+  for (const op of ["upsert", "delete"]) {
+    let result;
+    try {
+      result = statementFor({ seq: 1, table_name: name, row_id: "x", op, payload: { id: "x" } });
+    } catch (e) {
+      result = `LANZÓ ${e.constructor.name}`;
+    }
+    check(`rechaza sin lanzar: ${name} (${op})`, result, null);
+  }
+}
+
+// Y lo que no es ni una cadena tampoco entra por ahí.
+for (const name of [null, undefined, 42, ["products"], { toString: () => "products" }]) {
+  let result;
+  try {
+    result = statementFor({ seq: 1, table_name: name, row_id: "x", op: "upsert", payload: { id: "x" } });
+  } catch (e) {
+    result = `LANZÓ ${e.constructor.name}`;
+  }
+  check(`rechaza table_name ${JSON.stringify(name) ?? String(name)}`, result, null);
+}
+
+// Un `row_id` que no es texto no debe reventar el `split` de las bajas.
+{
+  let result;
+  try {
+    result = statementFor({ seq: 1, table_name: "products", row_id: 7, op: "delete", payload: null });
+  } catch (e) {
+    result = `LANZÓ ${e.constructor.name}`;
+  }
+  check("rechaza row_id que no es texto", result, null);
+}
+
 // --- 2. Columnas de más se ignoran, no rompen ------------------------------
 {
   const st = statementFor({
@@ -281,6 +335,54 @@ check("movimientos sin order_item_id", SYNCED_TABLES.inventory_movements.columns
   check("sin cadenas colgando",
     dbC.prepare("SELECT COUNT(*) n FROM orders WHERE merged_into IS NOT NULL AND merged_into <> 'ZZZ'").get().n,
     0);
+}
+
+// --- 6. La fusión también recibe el payload en crudo -----------------------
+//
+// `mergeStatements` corre ANTES de la lista blanca y lee `id`, `table_id` y
+// `created_at` directamente del mensaje. Una cuenta viva sin `id` acababa en un
+// `INSERT INTO orders` con la clave a nulo: la restricción lo rechaza y, como
+// el lote entero va en una sola transacción, se lleva por delante los cambios
+// buenos que venían al lado — y `last_seq` no avanza, así que el mismo lote
+// vuelve a pedirse para siempre.
+{
+  probe = () => [];
+
+  const malformed = [
+    { name: "sin id", payload: { table_id: "t1", status: "open", created_at: "2026-08-02 19:00:00" } },
+    { name: "sin table_id", payload: { id: "o1", status: "open", created_at: "2026-08-02 19:00:00" } },
+    { name: "sin created_at", payload: { id: "o1", table_id: "t1", status: "open" } },
+    { name: "id nulo", payload: { id: null, table_id: "t1", status: "open", created_at: "2026-08-02 19:00:00" } },
+    { name: "id numérico", payload: { id: 7, table_id: "t1", status: "open", created_at: "2026-08-02 19:00:00" } },
+    { name: "id vacío", payload: { id: "", table_id: "t1", status: "open", created_at: "2026-08-02 19:00:00" } },
+    { name: "payload nulo", payload: null },
+  ];
+
+  for (const m of malformed) {
+    let plan;
+    try {
+      plan = await mergeStatements([
+        { seq: 1, table_name: "orders", row_id: "o1", op: "upsert", payload: m.payload },
+      ]);
+    } catch (e) {
+      plan = `LANZÓ ${e.constructor.name}`;
+    }
+    check(
+      `la fusión descarta: ${m.name}`,
+      typeof plan === "string" ? plan : plan.before.length + plan.after.length,
+      0,
+    );
+  }
+
+  // Y una cuenta bien formada sigue pasando: el filtro no puede haberse comido
+  // el caso normal.
+  const good = await mergeStatements([
+    {
+      seq: 1, table_name: "orders", row_id: "o1", op: "upsert",
+      payload: { id: "o1", table_id: "t1", status: "open", created_at: "2026-08-02 19:00:00" },
+    },
+  ]);
+  check("la fusión acepta una cuenta bien formada", good.merged, 0);
 }
 
 console.log(`\n${pass} correctos, ${fail} fallos`);

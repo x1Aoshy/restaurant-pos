@@ -28,21 +28,26 @@ async function evaluate(source) {
   return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 }
 
-const { statementFor, SYNCED_TABLES } = await evaluate(
+const { statementFor, SYNCED_TABLES, specFor } = await evaluate(
   readFileSync(join(root, "src/features/sync/tables.ts"), "utf8").replace(
     /^import type .*?;$/gm,
     "",
   ),
 );
 
-// `seed.ts` lee la lista blanca del módulo de al lado. Aquí se le entrega la
-// misma que acaba de cargarse, para que la prueba ejercite el código que corre
-// de verdad y no una copia que puede quedarse atrás.
+// `seed.ts` lee la lista blanca del módulo de al lado. Aquí se le entregan la
+// misma lista y la misma búsqueda que acaban de cargarse, para que la prueba
+// ejercite el código que corre de verdad y no una copia que puede quedarse
+// atrás.
 globalThis.__SYNCED = SYNCED_TABLES;
+globalThis.__SPEC_FOR = specFor;
 const { seedStatements, SEEDED_TABLES } = await evaluate(
   readFileSync(join(root, "src/features/sync/seed.ts"), "utf8")
     .replace(/^import .*?;$/gm, "")
-    .replace("const WINDOW_DAYS", "const SYNCED_TABLES = globalThis.__SYNCED;\nconst WINDOW_DAYS"),
+    .replace(
+      "const WINDOW_DAYS",
+      "const SYNCED_TABLES = globalThis.__SYNCED;\nconst specFor = globalThis.__SPEC_FOR;\nconst WINDOW_DAYS",
+    ),
 );
 
 let pass = 0;

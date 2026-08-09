@@ -202,17 +202,47 @@ export interface RemoteChange {
 }
 
 /**
+ * Busca la tabla por propiedad PROPIA, no por la cadena de prototipos.
+ *
+ * `SYNCED_TABLES[nombre]` a secas también encuentra lo que hereda de
+ * `Object.prototype`. Con `table_name` puesto a `"constructor"`, `"toString"`,
+ * `"valueOf"` o `"__proto__"` la búsqueda devuelve algo que NO es nulo —una
+ * función, o el prototipo— y por tanto pasa el `if (!table)`. Lo que viene
+ * detrás lee `table.pk` y `table.columns`, que ahí no existen, y lanza un
+ * `TypeError`.
+ *
+ * Que lance es exactamente lo que este filtro promete no hacer, y el precio no
+ * es un mensaje perdido: la excepción sube hasta `pullChanges` antes de que se
+ * aplique nada, así que `last_seq` no avanza y el terminal vuelve a pedir el
+ * mismo lote —con el mismo mensaje envenenado dentro— cada treinta segundos.
+ * La sincronización de entrada queda muerta para siempre en todos los equipos
+ * del local, y en pantalla solo se lee «error de red», que apunta a otro sitio.
+ * Un mensaje así se cuela con solo tener la clave del local, y se queda en el
+ * servidor los noventa días que tarda `sync_prune` en barrerlo.
+ */
+export function specFor(name: unknown): SyncedTable | null {
+  if (typeof name !== "string") return null;
+  if (!Object.prototype.hasOwnProperty.call(SYNCED_TABLES, name)) return null;
+  return SYNCED_TABLES[name];
+}
+
+/**
  * Convierte un cambio remoto en una sentencia, o en `null` si no pasa el
  * filtro. Nunca lanza: un mensaje raro no debe parar la sincronización entera,
  * porque bastaría uno para dejar el terminal atascado para siempre.
  */
 export function statementFor(change: RemoteChange): Statement | null {
-  const table = SYNCED_TABLES[change.table_name];
+  if (!change || typeof change !== "object") return null;
+  const table = specFor(change.table_name);
   if (!table) return null;
 
   if (change.op === "delete") {
     // `settings` no se borra nunca: es una fila fija.
     if (change.table_name === "settings") return null;
+    // El servidor declara `row_id` como texto, pero eso lo garantiza el
+    // servidor, no este lado. Comprobarlo cuesta una línea y evita que un
+    // `split` sobre un número lance donde se prometió no lanzar.
+    if (typeof change.row_id !== "string") return null;
     const keys = change.row_id.split("/");
     if (keys.length !== table.pk.length) return null;
     const where = table.pk.map((c, i) => `${c} = $${i + 1}`).join(" AND ");

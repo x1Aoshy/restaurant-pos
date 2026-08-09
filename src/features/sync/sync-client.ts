@@ -152,13 +152,18 @@ export async function pullChanges(
   deviceId: string,
   after: number,
 ): Promise<{ applied: number; skipped: number; merged: number; lastSeq: number }> {
-  const changes = await rpc<RemoteChange[]>(config, "sync_pull", {
+  const body = await rpc<RemoteChange[]>(config, "sync_pull", {
     p_token: config.token,
     p_device: deviceId,
     p_after: after,
     p_limit: PULL_BATCH,
   });
 
+  // Se comprueba que sea una lista antes de recorrerla. Un servidor que
+  // responda 200 con otra cosa —un proxy de por medio, un portal de wifi que
+  // devuelve su propia página— haría fallar el `.filter` de la fusión con un
+  // error que no se parece en nada a la causa.
+  const changes = Array.isArray(body) ? body : [];
   if (changes.length === 0) return { applied: 0, skipped: 0, merged: 0, lastSeq: after };
 
   // La fusión va PRIMERO: si dos terminales abrieron la misma mesa, el índice
@@ -177,7 +182,14 @@ export async function pullChanges(
 
   statements.push(...plan.after);
 
-  const lastSeq = changes[changes.length - 1].seq;
+  // El mayor `seq` del lote, y no el del último elemento: el orden lo pone el
+  // servidor, pero de ese número depende no volver a pedir lo mismo, así que se
+  // deduce de lo que llegó en vez de darlo por hecho. Un lote entero sin `seq`
+  // utilizable deja el contador donde estaba, que es lo único seguro.
+  const lastSeq = changes.reduce(
+    (max, c) => (typeof c?.seq === "number" && Number.isFinite(c.seq) && c.seq > max ? c.seq : max),
+    after,
+  );
 
   // Aun sin nada que aplicar hay que avanzar el contador, o se pediría lo mismo
   // una y otra vez para siempre.

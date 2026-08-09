@@ -2,6 +2,55 @@
 
 ## 1.0.1
 
+### Fixed — syncing, security
+
+**A table name could walk around the whitelist and kill syncing for the whole
+venue.** The receiving side is the only place in the application that builds SQL
+out of data that arrived over the network, so every change is checked against a
+list of accepted tables. The list is a JavaScript object and it was read with a
+plain index — which also finds what the object inherits. `constructor`,
+`toString`, `valueOf` and `__proto__` all came back as something other than
+null, passed the check, and then blew up two lines later on fields they do not
+have.
+
+The damage was not the rejected message. The exception came out of
+`statementFor`, which is documented as never throwing precisely because
+everything downstream depends on it: it travelled up before anything was
+applied, `last_seq` never advanced, and the terminal re-requested the same batch
+— with the same message still in it — every thirty seconds. One message was
+enough to stop every terminal in the venue from receiving anything, forever,
+while the screen said "network error". Pushing it needed nothing but the venue
+token, which sits in the local database on any terminal, and it stayed on the
+server for the ninety days `sync_prune` takes to sweep it.
+
+The terminal now looks the table up as an own property, and the server refuses
+to store those names at all — the second one covers a venue that still has a
+machine on an older build. **Anyone running the sync server must re-run
+`supabase/sync-server.sql`;** it is written to be re-runnable.
+
+It survived because the check that was supposed to catch it was aimed one step
+to the side. `check-sync.mjs` tested `products; DROP TABLE staff;--` and the
+obvious invented names, and those were rejected correctly — the filter was never
+asked about a name that the language itself supplies an answer for.
+
+**Two more ways to wedge a terminal, same shape, same fix.** A live order
+arriving without `id`, `table_id` or `created_at` reached the merge rule, which
+reads those straight off the payload before the whitelist runs, and produced an
+`INSERT` with a null key; the constraint rejected it, and because the batch is
+one transaction it took the good changes next to it down as well — and again
+`last_seq` did not move. And a `sync_pull` reply that is not a list — what a
+captive wifi portal answers with — failed inside the merge with an error that
+looks nothing like its cause. Both are now discarded instead of thrown.
+
+### Fixed — checks
+
+**`npm run verify` depended on a package nobody had asked for.** Four of the
+check scripts import `esbuild` to compile the TypeScript they exercise, and it
+was never in `package.json` — it worked only because Vite happens to bring it
+along. The day Vite stops, or moves it, every check fails at once with an error
+about a missing module rather than anything to do with the code. It is declared
+now, at the version already in the tree.
+
 ### Fixed — syncing
 
 **Turning syncing on uploaded nothing that already existed.** The outbox
