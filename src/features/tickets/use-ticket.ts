@@ -14,18 +14,21 @@ import {
 } from "@/features/tickets/ticket-pdf";
 import { revealTicket, saveTicketPdf } from "@/features/tickets/save-ticket";
 import { useTicketLabels } from "@/features/tickets/use-ticket-labels";
+import { usePrinting } from "@/features/printing/use-printing";
 
 interface FetchedLine {
   name: string;
   quantity: number;
   unit_price_cents: number;
   tax_bp: number;
+  discount_cents: number;
 }
 
 export function useTicket() {
   const { settings } = useSession();
   const { t } = useI18n();
   const labels = useTicketLabels();
+  const { printReceipt } = usePrinting();
   const [busy, setBusy] = useState(false);
 
   const generate = useCallback(
@@ -42,10 +45,13 @@ export function useTicket() {
       setBusy(true);
       try {
         const fetched = await query<FetchedLine>(
-          `SELECT p.name, oi.quantity, oi.unit_price_cents, oi.tax_bp
+          // Las líneas anuladas no salen en el papel: el cliente no paga lo
+          // que se devolvió a la cocina.
+          `SELECT p.name, oi.quantity, oi.unit_price_cents, oi.tax_bp,
+                  oi.discount_cents
              FROM order_items oi
              JOIN products p ON p.id = oi.product_id
-            WHERE oi.order_id = $1
+            WHERE oi.order_id = $1 AND oi.voided_at IS NULL
             ORDER BY oi.created_at`,
           [order.id],
         );
@@ -55,14 +61,17 @@ export function useTicket() {
           quantity: l.quantity,
           unitPriceCents: l.unit_price_cents,
           bp: l.tax_bp,
-          subtotalCents: l.quantity * l.unit_price_cents,
+          discountCents: l.discount_cents,
+          subtotalCents: l.quantity * l.unit_price_cents - l.discount_cents,
         }));
 
         const map = new Map<number, { base: number; tax: number }>();
         for (const l of fetched) {
           const entry = map.get(l.tax_bp) ?? { base: 0, tax: 0 };
-          entry.base += l.quantity * l.unit_price_cents;
-          entry.tax += lineTaxCents(l.quantity, l.unit_price_cents, l.tax_bp);
+          // Base rebajada por el descuento, igual que en los triggers.
+          const base = l.quantity * l.unit_price_cents - l.discount_cents;
+          entry.base += base;
+          entry.tax += lineTaxCents(1, base, l.tax_bp);
           map.set(l.tax_bp, entry);
         }
         const taxBreakdown = Array.from(map.entries())
@@ -85,17 +94,30 @@ export function useTicket() {
           openedAt: order.created_at,
           closedAt: order.closed_at,
           subtotalCents: order.subtotal_cents,
+          discountCents: order.discount_cents,
           taxCents: order.tax_cents,
           totalCents: order.total_cents,
+          tipCents: order.tip_cents,
+          tenderedCents: order.tendered_cents,
           lines,
           taxBreakdown,
           paymentLabel,
         };
 
+        // Primero el papel. Si hay impresora configurada sale por ahí y el PDF
+        // queda de respaldo; si no la hay, `printReceipt` no hace nada y el PDF
+        // sigue siendo el ticket. Ni un aviso por no tener impresora.
+        const printed = await printReceipt(ticket, method === "cash");
+
         const result = await saveTicketPdf(
           buildTicketPdf(ticket),
           ticketFileName(ticket),
         );
+        if (printed) {
+          // Con papel en la mano, el aviso del PDF sobra.
+          setBusy(false);
+          return;
+        }
 
         if (result.status === "saved") {
           toast.success(t("toast.ticketSaved"), {
@@ -116,7 +138,7 @@ export function useTicket() {
         setBusy(false);
       }
     },
-    [settings, labels, t],
+    [settings, labels, printReceipt, t],
   );
 
   return { generate, busy };

@@ -46,9 +46,6 @@ export function SetupScreen() {
         <h1 className="mt-2 text-xl font-semibold tracking-tight">
           {t("setup.title")}
         </h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {t("setup.subtitle")}
-        </p>
 
         <form onSubmit={onSubmit} className="mt-7 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">

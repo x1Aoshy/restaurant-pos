@@ -1,4 +1,14 @@
-import { CircleAlert, LoaderCircle, Minus, Plus, Save, Trash2 } from "lucide-react";
+import { useState } from "react";
+import {
+  CircleAlert,
+  LoaderCircle,
+  TicketPercent,
+  Minus,
+  Plus,
+  Save,
+  Store,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +19,12 @@ import { formatCents } from "@/lib/format";
 import { formatBp } from "@/lib/money";
 import { useI18n } from "@/providers/i18n-provider";
 import type { useDraft } from "@/features/pos/use-draft";
+import { PaymentDialog } from "@/features/orders/payment-dialog";
+import { DiscountDialog } from "@/features/orders/discount-dialog";
+import { useSession } from "@/providers/session-provider";
+import { useTicket } from "@/features/tickets/use-ticket";
+import { queryOne } from "@/lib/db";
+import type { OrderRow, PaymentMethod } from "@/types/local";
 
 export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
   const { t } = useI18n();
@@ -23,7 +39,53 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
     setQuantity,
     clear,
     commit,
+    counterSale,
   } = draft;
+
+  const { generate } = useTicket();
+  const { staff, settings } = useSession();
+
+  // Mismo candado que en la mesa: la pantalla solo se lo ofrece a quien manda,
+  // y `discount_by` deja dicho quién fue.
+  const canDiscount = staff?.role === "admin" || staff?.role === "manager";
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [discount, setDiscount] = useState<{ parts: number[]; reason: string } | null>(
+    null,
+  );
+
+  const [counterOpen, setCounterOpen] = useState(false);
+
+  const bases = lines.map((l) => l.quantity * l.product.price_cents);
+  const discountCents = discount?.parts.reduce((n, d) => n + d, 0) ?? 0;
+
+  // Si cambian las líneas, el reparto guardado deja de corresponderse con
+  // ellas. Se descarta en vez de aplicarlo mal.
+  if (discount && discount.parts.length !== lines.length) setDiscount(null);
+
+  /** Cobra y emite el ticket de una venta de mostrador. */
+  const onCounter = async (
+    method: PaymentMethod,
+    reference: string,
+    tipCents: number,
+    tenderedCents: number | null,
+  ) => {
+    const orderId = await counterSale(
+      method,
+      reference,
+      tipCents,
+      tenderedCents,
+      discount,
+    );
+    if (!orderId) return;
+    setCounterOpen(false);
+    // La cuenta se relee de la base: los totales los acaba de calcular un
+    // trigger y el objeto que tenemos aquí es solo la previsualización.
+    const order = await queryOne<OrderRow>("SELECT * FROM orders WHERE id = $1", [
+      orderId,
+    ]);
+    if (order) await generate(order, 0, { method, reference });
+    setDiscount(null);
+  };
 
   const unknownTable = tableNumber.trim() !== "" && !table;
   const billedTable = existingOrder?.status === "billed";
@@ -158,6 +220,29 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
           </div>
         ))}
 
+        {/* El descuento solo aparece en el camino del mostrador: en una mesa
+            se guarda primero y se descuenta desde la comanda. Va como una fila
+            más del desglose y no como otro botón, que es lo que sobraba. */}
+        {canDiscount && tableNumber.trim() === "" && lines.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setDiscountOpen(true)}
+            className={cn(
+              "mt-1.5 flex w-full items-baseline justify-between rounded-md px-1 py-1",
+              "text-xs transition-colors hover:bg-accent/40",
+              discountCents > 0 ? "text-status-billed" : "text-muted-foreground",
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              <TicketPercent className="size-3.5" />
+              {discount?.reason || t("disc.title")}
+            </span>
+            <span className="font-mono tabular-nums">
+              {discountCents > 0 ? `−${formatCents(discountCents)}` : "+"}
+            </span>
+          </button>
+        ) : null}
+
         <Separator className="my-2.5" />
 
         {/* El total es LA cifra de esta pantalla: hay que leerlo de pie. */}
@@ -166,10 +251,15 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
             {t("pos.total")}
           </span>
           <span className="font-mono text-[1.75rem] font-semibold leading-none tracking-tight text-primary">
-            {formatCents(preview.totalCents)}
+            {formatCents(preview.totalCents - discountCents)}
           </span>
         </div>
 
+        {/* Una sola acción, la que toca.
+
+            Con mesa escrita se guarda la comanda; sin mesa se cobra en el
+            mostrador. Nunca las dos: son excluyentes por definición, y tener
+            los dos botones a la vez obligaba a leerlos antes de pulsar. */}
         <div className="mt-3 flex gap-2">
           <Button
             variant="ghost"
@@ -180,28 +270,61 @@ export function PosTicket({ draft }: { draft: ReturnType<typeof useDraft> }) {
           >
             {t("pos.clear")}
           </Button>
-          <Button
-            data-tour="pos-save"
-            onClick={() => void commit()}
-            disabled={!canSave}
-            className="h-11 flex-1 text-sm"
-          >
-            {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
-            {t("pos.save")}
-          </Button>
+          {tableNumber.trim() === "" ? (
+            <Button
+              onClick={() => setCounterOpen(true)}
+              disabled={lines.length === 0 || saving}
+              className="h-11 flex-1 text-sm"
+            >
+              {saving ? <LoaderCircle className="animate-spin" /> : <Store />}
+              {t("pos.counter")}
+            </Button>
+          ) : (
+            <Button
+              data-tour="pos-save"
+              onClick={() => void commit()}
+              disabled={!canSave}
+              className="h-11 flex-1 text-sm"
+            >
+              {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
+              {t("pos.save")}
+            </Button>
+          )}
         </div>
 
-        <p className="mt-2.5 flex items-center justify-center gap-1 text-[10px] text-muted-foreground">
-          <kbd className="raised rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] leading-none">
-            Ctrl
-          </kbd>
-          <span className="opacity-50">+</span>
-          <kbd className="raised rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] leading-none">
-            Enter
-          </kbd>
-          <span className="ml-1">{t("pos.ctrlHintShort")}</span>
-        </p>
       </div>
+
+      <DiscountDialog
+        open={discountOpen}
+        bases={bases}
+        // La misma cadena de respaldo que usa la previsualización del total.
+        // Con otra tasa aquí, el número del diálogo no sería el que se cobra.
+        taxBps={lines.map(
+          (l) => l.product.tax_bp ?? settings?.default_tax_bp ?? 1000,
+        )}
+        initialReason={discount?.reason}
+        canClear={discountCents > 0}
+        onClose={() => setDiscountOpen(false)}
+        onApply={(parts, reason) => {
+          setDiscount({ parts, reason });
+          setDiscountOpen(false);
+        }}
+        onClear={() => {
+          setDiscount(null);
+          setDiscountOpen(false);
+        }}
+      />
+
+      <PaymentDialog
+        open={counterOpen}
+        tableNumber={0}
+        totalCents={preview.totalCents - discountCents}
+        busy={saving}
+        onCancel={() => setCounterOpen(false)}
+        onConfirm={(method, reference, tipCents, tenderedCents) =>
+          void onCounter(method, reference, tipCents, tenderedCents)
+        }
+      />
     </div>
   );
 }

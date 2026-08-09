@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -175,7 +174,6 @@ export function RecipeDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t("recipe.title", { n: product?.name ?? "" })}</DialogTitle>
-          <DialogDescription>{t("recipe.desc")}</DialogDescription>
         </DialogHeader>
 
         {items === null ? (

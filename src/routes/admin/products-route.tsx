@@ -18,7 +18,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -329,7 +328,6 @@ export function ProductsRoute() {
             <DialogTitle>
               {form?.id ? t("products.edit") : t("products.new")}
             </DialogTitle>
-            <DialogDescription>{t("products.dialogDesc")}</DialogDescription>
           </DialogHeader>
 
           {form ? (

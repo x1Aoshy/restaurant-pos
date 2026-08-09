@@ -1,9 +1,11 @@
 [package]
 name = "restaurant"
-version = "0.1.0"
+version = "1.0.0"
 description = "Punto de venta para restaurante"
 authors = ["x1Aoshy"]
 edition = "2021"
+license-file = "../LICENSE"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -18,10 +20,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# `devtools`: habilita inspeccionar la ventana también en compilación de
-# release. Temporal, mientras se estabiliza la instalación — sin esto un fallo
-# solo visible en el instalador se diagnostica a ciegas.
-tauri = { version = "2", features = ["devtools"] }
+# Sin `devtools`: en desarrollo el inspector viene de serie, así que activarlo
+# aquí solo lo añadía a la compilación que se instala en el local. En un
+# terminal de sala, cualquiera que llegue al teclado podría abrirlo y tocar la
+# base directamente. Si algún día hace falta diagnosticar sobre el instalador,
+# se vuelve a poner por una compilación y se quita.
+tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -35,5 +39,22 @@ serde_json = "1"
 # transacción de verdad. La versión debe coincidir con la que arrastra el
 # plugin para que los tipos `Pool<Sqlite>` sean el mismo.
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
-tokio = { version = "1", features = ["sync"] }
+# `net` y `time` para hablar con la impresora por TCP con tiempo limite.
+tokio = { version = "1", features = ["sync", "net", "time", "io-util"] }
+
+# La compilacion que se instala en el local.
+[profile.release]
+# Optimizar por tamano y no por velocidad: aqui no hay nada que calcular. El
+# trabajo pesado lo hace SQLite, que ya viene compilado aparte.
+opt-level = "s"
+# Optimizar el binario entero de una vez en lugar de modulo a modulo. Compila
+# mas lento y produce menos binario.
+lto = true
+codegen-units = 1
+# Fuera los simbolos de depuracion: no se usan y son la mayor parte del peso.
+strip = true
+# `panic = "abort"` NO. Un panico en el hilo que habla con la impresora debe
+# poder recogerse y convertirse en un aviso; con abort se llevaria por delante
+# la aplicacion entera, y con ella la comanda que se estaba cobrando.
+panic = "unwind"
 

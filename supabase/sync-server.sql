@@ -86,7 +86,7 @@ begin
 end;
 $$;
 
-revoke execute on function public.create_venue(text) from anon, authenticated;
+revoke execute on function public.create_venue(text) from public;
 
 -- -----------------------------------------------------------------------------
 -- Comprueba la clave y devuelve el local.
@@ -102,7 +102,7 @@ as $$
    limit 1;
 $$;
 
-revoke execute on function public.venue_of(text) from anon, authenticated;
+revoke execute on function public.venue_of(text) from public;
 
 -- -----------------------------------------------------------------------------
 -- Subir. Recibe el buzón de un terminal y devuelve cuántos entraron.
@@ -139,7 +139,8 @@ begin
 end;
 $$;
 
-grant execute on function public.sync_push(text, text, jsonb) to anon;
+revoke execute on function public.sync_push(text, text, jsonb) from public;
+grant  execute on function public.sync_push(text, text, jsonb) to anon;
 
 -- -----------------------------------------------------------------------------
 -- Bajar. Devuelve lo que haya después de `p_after`, sin lo que mandó este mismo
@@ -184,7 +185,8 @@ begin
 end;
 $$;
 
-grant execute on function public.sync_pull(text, text, bigint, int) to anon;
+revoke execute on function public.sync_pull(text, text, bigint, int) from public;
+grant  execute on function public.sync_pull(text, text, bigint, int) to anon;
 
 -- -----------------------------------------------------------------------------
 -- Limpieza. El registro crece sin parar; una vez que todos los terminales han
@@ -209,4 +211,4 @@ begin
 end;
 $$;
 
-revoke execute on function public.sync_prune(int) from anon, authenticated;
+revoke execute on function public.sync_prune(int) from public;

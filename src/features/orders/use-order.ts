@@ -16,6 +16,8 @@ import type {
 /** Línea con el nombre del producto ya resuelto, para poder pintarla. */
 export interface OrderLine extends OrderItemRow {
   product_name: string;
+  /** De la carta, no de la línea: dice por qué impresora salió y sale. */
+  print_group: string;
 }
 
 export function useOrder(table: TableRow | null) {
@@ -31,7 +33,7 @@ export function useOrder(table: TableRow | null) {
 
   const loadItems = useCallback(async (id: string) => {
     const rows = await query<OrderLine>(
-      `SELECT oi.*, p.name AS product_name
+      `SELECT oi.*, p.name AS product_name, p.print_group
          FROM order_items oi
          JOIN products p ON p.id = oi.product_id
         WHERE oi.order_id = $1
@@ -114,21 +116,50 @@ export function useOrder(table: TableRow | null) {
 
   const setQuantity = useCallback(
     async (item: OrderLine, quantity: number) => {
+      // Bajar de uno ya no borra: quitar una línea entera es anular, y eso pasa
+      // por `voidLine` con motivo. Aquí solo se corrige la cantidad, que el
+      // trigger de inventario ajusta por la diferencia.
+      if (quantity <= 0) return;
       try {
-        if (quantity <= 0) {
-          await exec("DELETE FROM order_items WHERE id = $1", [item.id]);
-        } else {
-          await exec("UPDATE order_items SET quantity = $1 WHERE id = $2", [
-            quantity,
-            item.id,
-          ]);
-        }
+        await exec("UPDATE order_items SET quantity = $1 WHERE id = $2", [
+          quantity,
+          item.id,
+        ]);
         await refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       }
     },
     [refresh],
+  );
+
+  /**
+   * Anula una línea. No la borra.
+   *
+   * Cuando una línea llega a `order_items` ya se guardó la comanda y el papel
+   * salió por cocina: alguien está cocinando eso. Borrarla sin más deja la
+   * cuenta cuadrando sola y ninguna explicación de por qué se cocinó de más.
+   *
+   * Los totales dejan de contarla y el inventario devuelve lo que consumió, los
+   * dos por trigger. Aquí solo se marca.
+   */
+  const voidLine = useCallback(
+    async (item: OrderLine, reason: string) => {
+      try {
+        await exec(
+          `UPDATE order_items
+              SET voided_at = datetime('now'), void_reason = $1, voided_by = $2
+            WHERE id = $3 AND voided_at IS NULL`,
+          [reason.trim() || null, staff?.id ?? null, item.id],
+        );
+        await refresh();
+        return true;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+        return false;
+      }
+    },
+    [refresh, staff?.id],
   );
 
   const setStatus = useCallback(
@@ -149,15 +180,31 @@ export function useOrder(table: TableRow | null) {
 
   /** Cierra la cuenta dejando constancia de cómo se cobró. */
   const settle = useCallback(
-    async (method: string, reference: string) => {
+    async (
+      method: string,
+      reference: string,
+      tipCents = 0,
+      tenderedCents: number | null = null,
+    ) => {
       if (!orderId) return false;
       setBusy(true);
       try {
+        // La propina y lo entregado entran en el MISMO UPDATE que el cobro.
+        // Guardarlos aparte dejaría un instante con la cuenta ya pagada y los
+        // dos a cero, y el trigger que mete el efectivo en el cajón —que mira
+        // justamente esas columnas— se llevaría el importe equivocado.
         await exec(
           `UPDATE orders
-              SET status = 'paid', payment_method = $1, payment_ref = $2
-            WHERE id = $3`,
-          [method, reference || null, orderId],
+              SET status = 'paid', payment_method = $1, payment_ref = $2,
+                  tip_cents = $3, tendered_cents = $4
+            WHERE id = $5`,
+          [
+            method,
+            reference || null,
+            Math.max(0, Math.round(tipCents)),
+            tenderedCents === null ? null : Math.max(0, Math.round(tenderedCents)),
+            orderId,
+          ],
         );
         return true;
       } catch (e) {
@@ -174,9 +221,15 @@ export function useOrder(table: TableRow | null) {
   const taxBreakdown = useMemo(() => {
     const map = new Map<number, { base: number; tax: number }>();
     for (const item of items) {
+      // La línea anulada no existe para el ticket ni para el impuesto.
+      if (item.voided_at) continue;
       const entry = map.get(item.tax_bp) ?? { base: 0, tax: 0 };
-      entry.base += item.quantity * item.unit_price_cents;
-      entry.tax += lineTaxCents(item.quantity, item.unit_price_cents, item.tax_bp);
+      // El descuento rebaja la base imponible, igual que en los triggers. Si
+      // aquí se calculara sobre el bruto, el papel y la base dirían cifras
+      // distintas justo en las cuentas con descuento.
+      const base = item.quantity * item.unit_price_cents - item.discount_cents;
+      entry.base += base;
+      entry.tax += lineTaxCents(1, base, item.tax_bp);
       map.set(item.tax_bp, entry);
     }
     return Array.from(map.entries())
@@ -192,6 +245,7 @@ export function useOrder(table: TableRow | null) {
     openOrder,
     addProduct,
     setQuantity,
+    voidLine,
     setStatus,
     settle,
     refresh,

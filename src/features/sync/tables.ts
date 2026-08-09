@@ -14,7 +14,7 @@ import type { Statement } from "@/lib/db";
  *
  * Las columnas calculadas —totales, estado de mesa, existencias— NO están, a
  * propósito: las deduce cada terminal de las filas de origen. Recibirlas
- * además de calcularlas las contaría dos veces. Ver SYNC.md.
+ * además de calcularlas las contaría dos veces. Ver docs/SYNC.md.
  */
 interface SyncedTable {
   /** Clave primaria, para el ON CONFLICT. */
@@ -44,7 +44,7 @@ export const SYNCED_TABLES: Record<string, SyncedTable> = {
   },
   tables: {
     pk: ["id"],
-    columns: ["id", "number", "capacity"],
+    columns: ["id", "number", "capacity", "zone_id"],
   },
   products: {
     pk: ["id"],
@@ -55,6 +55,7 @@ export const SYNCED_TABLES: Record<string, SyncedTable> = {
       "category",
       "available",
       "tax_bp",
+      "print_group",
       "created_at",
     ],
   },
@@ -68,6 +69,12 @@ export const SYNCED_TABLES: Record<string, SyncedTable> = {
       "opened_by",
       "payment_method",
       "payment_ref",
+      "tip_cents",
+      "tendered_cents",
+      // `discount_cents` NO está: lo calcula el trigger sumando las líneas. Si
+      // llegara de fuera habría dos verdades y ganaría la equivocada.
+      "discount_reason",
+      "discount_by",
       "created_at",
       "closed_at",
     ],
@@ -82,6 +89,11 @@ export const SYNCED_TABLES: Record<string, SyncedTable> = {
       "unit_price_cents",
       "tax_bp",
       "notes",
+      "discount_cents",
+      "voided_at",
+      "void_reason",
+      "voided_by",
+      "printed_at",
       "created_at",
     ],
   },
@@ -124,6 +136,60 @@ export const SYNCED_TABLES: Record<string, SyncedTable> = {
   product_recipe: {
     pk: ["product_id", "item_id"],
     columns: ["product_id", "item_id", "quantity_milli"],
+  },
+  zones: {
+    pk: ["id"],
+    columns: ["id", "name", "created_at"],
+  },
+  printers: {
+    pk: ["id"],
+    columns: [
+      "id",
+      "name",
+      "connection",
+      "address",
+      "port",
+      "width_chars",
+      "opens_drawer",
+      "active",
+      "codepage",
+      "cut_mode",
+      "created_at",
+    ],
+  },
+  printer_routing: {
+    pk: ["id"],
+    columns: ["id", "zone_id", "print_group", "printer_id"],
+  },
+  cash_registers: {
+    pk: ["id"],
+    // Sin `expected_cents` ni `difference_cents`: los deduce cada equipo de los
+    // movimientos, igual que los totales de una cuenta.
+    columns: [
+      "id",
+      "device_id",
+      "opened_by",
+      "opened_at",
+      "opening_float_cents",
+      "closed_by",
+      "closed_at",
+      "counted_cents",
+      "status",
+      "note",
+    ],
+  },
+  cash_movements: {
+    pk: ["id"],
+    columns: [
+      "id",
+      "register_id",
+      "kind",
+      "amount_cents",
+      "order_id",
+      "note",
+      "created_by",
+      "created_at",
+    ],
   },
 };
 

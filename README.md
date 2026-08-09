@@ -1,61 +1,99 @@
 # x1Aoshy POS
 
-Punto de venta de escritorio para restaurante. Registro de comandas, control de
-mesas, inventario con recetas, gastos, historial de facturación y emisión de
-tickets en PDF.
+Desktop point of sale for a restaurant. Orders, tables across floors and the
+bar, cash shifts with a blind count, tips, discounts and voids with a reason,
+inventory with recipes, expenses, billing, thermal printing to the kitchen and
+the bar, automatic backups, and syncing between terminals.
 
-## Cómo funciona
+## How it works
 
-Aplicación de escritorio para Windows con **la base de datos en el propio
-equipo**. No hay servidor que mantener, ni cuenta en ningún servicio, ni
-conexión a internet: se instala y funciona.
+A Windows desktop app with **the database on the machine itself**. No server to
+maintain, no account with any service: install it and it runs, including with
+the internet down.
 
 ```
 Terminal (Windows)
-  └── x1Aoshy POS ──► pos.db  (SQLite, en el equipo)
+  └── x1Aoshy POS ──► pos.db  (SQLite, on the machine)
 ```
 
-Está pensado para el caso real de un salón: **un ordenador** donde alguien pasa
-las comandas de papel. No una tableta por mesero. Por eso todo cabe en una
-pantalla y se maneja con el teclado.
+It is built for what a small dining room actually looks like: **one computer**
+where somebody types in the orders that arrive on paper. Not a tablet per
+waiter. That is why everything fits on one screen and works from the keyboard.
 
-## Pila
+If a second terminal is needed later, syncing is switched on in Settings and
+works without comparing clocks: each machine records its changes in an outbox
+and the server puts them in order. It ships off. Details in
+[docs/SYNC.md](docs/SYNC.md).
 
-| Capa | Tecnología |
+### Supabase is not required
+
+Worth saying plainly, because the repository mentions it in several places:
+**the whole application works without an account anywhere.** Selling, charging,
+printing, closing the register, tracking inventory and making backups never
+touch the network.
+
+This is checkable, not a promise:
+
+- There is no Supabase dependency in `package.json`. The sync client is four
+  `fetch` calls.
+- There is no server address anywhere in the code. Whoever installs the app
+  types it in, and it lives in the database — never in the binary or a `.env`.
+- `sync_context.enabled` starts at `0`, and the outbox triggers hang off it.
+  Switched off, changes are not even recorded.
+- The sync indicator does not render while syncing is off.
+
+Supabase is one option for the two-terminal case, and nothing else. It is not a
+backup: backups are the local copies, which also upload nothing anywhere.
+
+## Stack
+
+| Layer | Technology |
 |---|---|
-| Escritorio | Tauri 2 (Rust) |
-| Interfaz | React 19 · TypeScript · Vite |
-| Estilos | Tailwind 4 · Base UI |
-| Datos | SQLite local (`tauri-plugin-sql`) |
-| Tickets | jsPDF — 80 mm térmico o A4 |
+| Desktop | Tauri 2 (Rust) |
+| Interface | React 19 · TypeScript · Vite |
+| Styling | Tailwind 4 · Base UI |
+| Data | Local SQLite (`tauri-plugin-sql`) |
+| Receipts | jsPDF — 80 mm thermal or A4 |
+| Printing | ESC/POS over TCP, with a small Rust adapter |
 
-## Principios del diseño
+## Design principles
 
-**El dinero nunca es un decimal.** Los importes se guardan y se operan en
-centavos enteros, y las tasas en puntos básicos (1000 = 10 %). SQLite no tiene
-tipo decimal, y en coma flotante `0,1 + 0,2` no es `0,3`: sobre cien líneas eso
-son descuadres de un centavo que aparecen justo al cuadrar la caja y que nadie
-sabe explicar.
+**Money is never a decimal.** Amounts are stored and computed in whole cents,
+and tax rates in basis points (1000 = 10%). SQLite has no decimal type, and in
+floating point `0.1 + 0.2` is not `0.3`. Across a hundred lines that becomes
+one-cent gaps that show up exactly when the register is counted, and that nobody
+can explain.
 
-**Los totales los calcula la base.** La interfaz manda producto y cantidad; el
-subtotal, el impuesto y el total los resuelven triggers de SQLite. El impuesto
-se redondea **por línea** antes de sumar, igual que en el ticket impreso — si se
-redondeara solo al final, el papel y la base dirían cifras distintas.
+**The database computes the totals.** The interface sends a product and a
+quantity; subtotal, tax and total are resolved by SQLite triggers. Tax is
+rounded **per line** before summing, the same way the printed receipt does it.
+Round only at the end and the paper and the database start quoting different
+numbers.
 
-**Los precios se congelan al vender.** `order_items` guarda copia del precio y
-de la tasa del momento. Cambiar la carta no reescribe tickets ya emitidos.
+**Prices freeze at the moment of sale.** `order_items` keeps its own copy of the
+price and the tax rate. Editing the menu does not rewrite receipts that have
+already been issued.
 
-**El inventario es un libro mayor.** El stock es la suma de los movimientos, no
-un campo editable. Cada apunte queda atado a la línea de comanda que lo produjo,
-así que corregir una cantidad, anular una cuenta o borrarla mueven exactamente
-lo que corresponde. Un error se arregla con un asiento de ajuste, nunca borrando
-historial.
+**Inventory is a ledger.** Stock is the sum of its movements, not an editable
+field. Every entry is tied to the order line that produced it, so correcting a
+quantity, voiding a ticket or deleting one moves exactly what it should. A
+mistake is fixed with an adjusting entry, never by erasing history.
 
-**Las fechas son las del local, no las de UTC.** Los informes agrupan por fecha
-local. Sin eso, en Nicaragua (UTC−6) todo lo cobrado a partir de las 18:00 —las
-horas de más venta— contaría como del día siguiente.
+**Dates are local, not UTC.** Reports group by local date. Without that, in
+Nicaragua (UTC−6) everything charged after 18:00 — the busiest hours — would
+count as the following day.
 
-## Desarrollo
+**A tip is not revenue.** It is stored separately and never enters
+`total_cents`. Adding it to the total would inflate income and margin with money
+that does not belong to the business. What gets charged is the sum of the two
+fields, and that is how the receipt prints it.
+
+**Voiding is not deleting.** A voided line stays on the ticket with its reason,
+its time and who voided it. Totals stop counting it and inventory returns what
+it consumed, both by trigger. What gets deleted cannot be reviewed afterwards,
+and reviewing is the whole point.
+
+## Development
 
 ```bash
 npm install
@@ -65,47 +103,85 @@ npm install
 npm run tauri dev
 ```
 
-La base se crea sola al abrir la aplicación por primera vez y las migraciones se
-aplican en orden sin intervención. La primera pantalla pide crear la cuenta de
-administración.
+The database is created on first launch and the migrations apply in order with
+no intervention. The first screen asks you to create the admin account.
 
-Una única instancia a la vez: el puerto 1420 es fijo y el binario queda
-bloqueado mientras la aplicación corre.
+One instance at a time: port 1420 is fixed, and the binary is locked while the
+app is running.
 
-### Comprobaciones
+Node 22 or newer is required — the checks use `node:sqlite`, which does not
+exist before 22.5. There is also a Docker setup that needs none of this
+installed; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Checks
 
 ```bash
 npm run verify
 ```
 
-Encadena tres cosas: tipos (`tsc`), paridad entre los diccionarios de español e
-inglés, y los triggers del esquema contra un SQLite de verdad. Lo último no es
-ceremonia: un trigger que descuenta de menos no da error, solo hace que el
-recuento del día mienta.
+This runs types (`tsc`), the lock on migrations that have already been applied,
+parity between the Spanish and English dictionaries, and six suites that execute
+the schema, the triggers and the queries against a real SQLite: schema, sync,
+business logic, discount splitting, the review screen, kitchen tickets and cash
+handling.
 
-## Producción
+None of this is ceremony. Nothing here throws when it breaks. A trigger that
+deducts too little, a discount that splits one cent wrong, a line that is never
+marked as sent — none of them raise an error. They just make the day's count lie,
+or make the kitchen cook the same dish twice.
+
+The Rust tests — the ESC/POS adapter and backups — run separately:
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+## Production
 
 ```bash
 npm run tauri build
 ```
 
-Genera instaladores `.msi` y `.exe` en `src-tauri/target/release/bundle/`.
+Produces `.msi` and `.exe` installers under `src-tauri/target/release/bundle/`.
 
-Pasos completos en `DEPLOY.md`. Modelo de amenaza y estado de la revisión en
-`SECURITY.md`.
+Full steps in [docs/DEPLOY.md](docs/DEPLOY.md). Threat model and the state of
+the review in [SECURITY.md](SECURITY.md).
 
-## Estructura
+## Layout
 
 ```
 src/
-  components/      barra lateral, layout, barra de título, pantallas de acceso
+  components/      sidebar, layout, title bar, sign-in screens
   features/        pos · orders · floor · products · inventory · tickets · dashboard
-  providers/       sesión · i18n · tema · salón · menú
-  routes/          pantallas, incluidas las de administración
-  lib/             base de datos, dinero, PIN, formato, idiomas
-  types/local.ts   filas de SQLite, con sufijo de unidad en cada importe
+                   register · printing · backup · audit · sync
+  providers/       session · i18n · theme · floor · menu
+  routes/          screens, including the admin ones
+  lib/             database, money, PIN, formatting, languages
+  types/local.ts   SQLite rows, with a unit suffix on every amount
 src-tauri/
-  migrations/      esquema y triggers — se aplican solos al arrancar
-  capabilities/    permisos de ventana, SQL, ficheros y diálogos
-scripts/           comprobaciones de esquema y traducciones
+  migrations/      schema and triggers — applied automatically at startup
+  capabilities/    window, SQL, file and dialog permissions
+  installer/       installer artwork, generated from the app icon
+  src/             transactions, the ESC/POS adapter and backups
+scripts/           the checks that `npm run verify` runs
+docs/              deployment and sync design
 ```
+
+Migrations **are not edited once applied**. The SQL plugin stores a digest of
+each one, and if it changes the app will not open again. A correction is made by
+adding the next migration. `npm run verify` includes the lock that catches this
+on a developer's desk instead of in the restaurant.
+
+## Changes
+
+[CHANGELOG.md](CHANGELOG.md) lists what was fixed on the way to 1.0.0. It is
+worth reading if you are running an earlier build of the sync server — one of
+the entries is a permission fix that applies to a database already in use.
+
+## License
+
+Proprietary — see [LICENSE](LICENSE). The source can be read, compiled and
+studied. It cannot be used to run a business, sold, offered as a service or
+redistributed without written permission. The license text is kept in both
+English and Spanish: it is the one document where the owner's own language
+matters if it ever has to be enforced.

@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 
 import { SUPPORTED_CURRENCIES, isSupportedCurrency } from "@/lib/format";
 import { formatBp } from "@/lib/money";
+import { cashSplit } from "@/features/orders/cash";
 import type { SettingsRow } from "@/types/local";
 
 export interface TicketLine {
@@ -9,6 +10,9 @@ export interface TicketLine {
   quantity: number;
   unitPriceCents: number;
   bp: number;
+  /** Descuento de esta línea. Ya viene restado de `subtotalCents`. */
+  discountCents: number;
+  /** Lo que se cobra por la línea: cantidad × precio − descuento. */
   subtotalCents: number;
 }
 
@@ -26,9 +30,18 @@ export interface TicketLabels {
   venueFallback: string;
   ticket: string;
   table: string;
+  /** La mesa 0 es el mostrador; se imprime con su nombre, no como «00». */
+  counter: string;
   subtotal: string;
   taxes: string;
   taxShort: string;
+  discount: string;
+  tip: string;
+  totalPaid: string;
+  tendered: string;
+  change: string;
+  /** Lo que quedó sin cobrar. Distinto del vuelto y con otra palabra. */
+  short: string;
   /** Une tasa y base: «Impuesto 15% sobre 100,00». */
   taxOn: string;
   total: string;
@@ -46,8 +59,18 @@ export interface TicketData {
   openedAt: string;
   closedAt: string | null;
   subtotalCents: number;
+  /** Suma de los descuentos de línea. Se enseña solo si hay alguno. */
+  discountCents: number;
   taxCents: number;
+  /** La venta: subtotal − descuento + impuesto. NO incluye la propina. */
   totalCents: number;
+  tipCents: number;
+  /**
+   * Efectivo entregado. Nulo si no se anotó, y entonces no se imprime ni el
+   * vuelto ni lo pendiente: un ticket que dice «vuelto 0,00» hace dudar de si
+   * se devolvió algo.
+   */
+  tenderedCents: number | null;
   lines: TicketLine[];
   taxBreakdown: { bp: number; base: number; tax: number }[];
   /** Ej.: «Pagado con tarjeta · 004521». Se omite si no se registró. */
@@ -63,6 +86,11 @@ const FILL: [number, number, number] = [244, 244, 244];
 
 function localeOf(code: string) {
   return SUPPORTED_CURRENCIES.find((c) => c.code === code)?.locale ?? "en-US";
+}
+
+/** «Mesa 04», o «Barra» cuando no hay mesa de por medio. */
+function tableText(n: number, labels: TicketLabels) {
+  return n === 0 ? labels.counter : `${labels.table} ${String(n).padStart(2, "0")}`;
 }
 
 function money(cents: number, currency: string) {
@@ -91,10 +119,16 @@ function buildPosTicket(data: TicketData): jsPDF {
   const CENTER = W / 2;
 
   const taxLines = settings.show_tax_breakdown === 1 ? data.taxBreakdown.length : 1;
+  const extraRows =
+    (data.discountCents > 0 ? 1 : 0) +
+    (data.tipCents > 0 ? 1 : 0) +
+    // Entregado, y una más para el vuelto o lo pendiente.
+    (data.tenderedCents !== null ? 2 : 0);
   const height =
     38 +
     data.lines.length * 8 +
     taxLines * 4 +
+    extraRows * 4 +
     (settings.ticket_header ? 8 : 0) +
     (settings.ticket_footer ? 12 : 0) +
     26;
@@ -139,7 +173,7 @@ function buildPosTicket(data: TicketData): jsPDF {
   y += 1.5;
   doc.setFontSize(7);
   doc.text(
-    `${data.reference}  ·  ${labels.table} ${String(data.tableNumber).padStart(2, "0")}`,
+    `${data.reference}  ·  ${tableText(data.tableNumber, labels)}`,
     CENTER,
     y,
     { align: "center" },
@@ -198,7 +232,12 @@ function buildPosTicket(data: TicketData): jsPDF {
     y += bold ? 6 : 4;
   };
 
+  // Orden del desglose: bruto, lo que se descuenta, lo que se añade. Cualquier
+  // otro orden obliga a rehacer la cuenta mentalmente para comprobarla.
   row(labels.subtotal, money(data.subtotalCents, currency));
+  if (data.discountCents > 0) {
+    row(labels.discount, `-${money(data.discountCents, currency)}`);
+  }
   if (settings.show_tax_breakdown === 1) {
     for (const b of data.taxBreakdown) {
       row(`${labels.taxShort} ${formatBp(b.bp)}`, money(b.tax, currency), false, 7);
@@ -206,11 +245,36 @@ function buildPosTicket(data: TicketData): jsPDF {
   } else {
     row(labels.taxes, money(data.taxCents, currency));
   }
+  if (data.tipCents > 0) {
+    row(labels.tip, money(data.tipCents, currency));
+  }
 
   y += 1;
   rule();
   y += 5;
-  row(labels.total.toUpperCase(), money(data.totalCents, currency), true, 11);
+  // Con propina, lo grande es lo que se pagó de verdad; sin ella, el total de
+  // siempre. Enseñar dos cifras casi iguales solo genera dudas al cliente.
+  row(
+    data.tipCents > 0 ? labels.totalPaid.toUpperCase() : labels.total.toUpperCase(),
+    money(data.totalCents + data.tipCents, currency),
+    true,
+    11,
+  );
+
+  // Entregado y vuelto, debajo del total. Es lo que se mira cuando alguien
+  // vuelve a decir «te di quinientos»: sin estas dos líneas, el ticket no
+  // guarda ni rastro de cuánto pasó por el mostrador.
+  const cash = cashSplit(data.totalCents + data.tipCents, data.tenderedCents);
+  if (data.tenderedCents !== null) {
+    y += 2;
+    row(labels.tendered, money(data.tenderedCents, currency), false, 8);
+    if (cash.changeCents > 0) {
+      row(labels.change, money(cash.changeCents, currency), true, 9);
+    }
+    if (cash.shortCents > 0) {
+      row(labels.short, money(cash.shortCents, currency), true, 9);
+    }
+  }
 
   if (data.paymentLabel) {
     doc.setFont("helvetica", "normal");
@@ -280,7 +344,7 @@ function buildA4Ticket(data: TicketData): jsPDF {
   doc.setFontSize(7.5);
   doc.setTextColor(...GRAY);
   doc.text(
-    `${labels.table} ${String(data.tableNumber).padStart(2, "0")}  ·  ${new Date(
+    `${tableText(data.tableNumber, labels)}  ·  ${new Date(
       data.closedAt ?? data.openedAt,
     ).toLocaleString(labels.locale)}`,
     boxX + 4,
@@ -351,6 +415,9 @@ function buildA4Ticket(data: TicketData): jsPDF {
   };
 
   totalRow(labels.subtotal, money(data.subtotalCents, currency));
+  if (data.discountCents > 0) {
+    totalRow(labels.discount, `-${money(data.discountCents, currency)}`);
+  }
   if (settings.show_tax_breakdown === 1) {
     for (const b of data.taxBreakdown) {
       totalRow(
@@ -361,6 +428,9 @@ function buildA4Ticket(data: TicketData): jsPDF {
   } else {
     totalRow(labels.taxes, money(data.taxCents, currency));
   }
+  if (data.tipCents > 0) {
+    totalRow(labels.tip, money(data.tipCents, currency));
+  }
 
   y += 1;
   hairline(blockX, RIGHT, y, INK, 0.4);
@@ -368,9 +438,28 @@ function buildA4Ticket(data: TicketData): jsPDF {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(...INK);
-  doc.text(labels.total.toUpperCase(), blockX, y);
+  doc.text(
+    data.tipCents > 0 ? labels.totalPaid.toUpperCase() : labels.total.toUpperCase(),
+    blockX,
+    y,
+  );
   doc.setFontSize(13);
-  doc.text(money(data.totalCents, currency), RIGHT - 2, y, { align: "right" });
+  doc.text(money(data.totalCents + data.tipCents, currency), RIGHT - 2, y, {
+    align: "right",
+  });
+
+  const a4Cash = cashSplit(data.totalCents + data.tipCents, data.tenderedCents);
+  if (data.tenderedCents !== null) {
+    y += 6;
+    totalRow(labels.tendered, money(data.tenderedCents, currency));
+    if (a4Cash.changeCents > 0) {
+      totalRow(labels.change, money(a4Cash.changeCents, currency));
+    }
+    if (a4Cash.shortCents > 0) {
+      totalRow(labels.short, money(a4Cash.shortCents, currency));
+    }
+    y -= 5;
+  }
 
   if (data.paymentLabel) {
     y += 7;

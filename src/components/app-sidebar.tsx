@@ -10,6 +10,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { SyncBadge } from "@/components/sync-badge";
+import { BackupBadge } from "@/components/backup-badge";
 import { TourOverlay } from "@/features/tutorial/tour-overlay";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/providers/session-provider";
@@ -113,6 +114,7 @@ export function AppSidebar() {
 
       <div className="flex flex-col items-center gap-1.5">
         <SyncBadge />
+        <BackupBadge />
 
         {/* Encima de la burbuja: la ayuda pertenece a la persona que tiene el
             turno, no a la pantalla en la que esté. Sustituye a los párrafos

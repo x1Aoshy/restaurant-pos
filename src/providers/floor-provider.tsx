@@ -9,10 +9,17 @@ import {
 } from "react";
 
 import { query } from "@/lib/db";
-import { LIVE_ORDER_STATUSES, type OrderRow, type TableRow } from "@/types/local";
+import {
+  LIVE_ORDER_STATUSES,
+  type OrderRow,
+  type TableRow,
+  type ZoneRow,
+} from "@/types/local";
 
 interface FloorState {
   tables: TableRow[];
+  /** Plantas y salas. Vacío en un local de una sola sala, que es lo normal. */
+  zones: ZoneRow[];
   /** Cuenta viva por mesa, indexada por `table_id`. */
   liveOrders: Record<string, OrderRow>;
   loading: boolean;
@@ -32,6 +39,7 @@ const FloorContext = createContext<FloorState | null>(null);
  */
 export function FloorProvider({ children }: { children: ReactNode }) {
   const [tables, setTables] = useState<TableRow[]>([]);
+  const [zones, setZones] = useState<ZoneRow[]>([]);
   const [liveOrders, setLiveOrders] = useState<Record<string, OrderRow>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +47,9 @@ export function FloorProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     try {
       const placeholders = LIVE_ORDER_STATUSES.map((_, i) => `$${i + 1}`).join(",");
-      const [tableRows, orderRows] = await Promise.all([
-        query<TableRow>("SELECT * FROM tables ORDER BY number"),
+      const [tableRows, orderRows, zoneRows] = await Promise.all([
+        // La mesa 0 es el mostrador: no es un sitio donde sentarse.
+        query<TableRow>("SELECT * FROM tables WHERE number > 0 ORDER BY number"),
         query<OrderRow>(
           // `merged_into IS NULL`: una cuenta absorbida por otra al
           // sincronizar sigue en el historial, pero ya no ocupa la mesa.
@@ -48,9 +57,11 @@ export function FloorProvider({ children }: { children: ReactNode }) {
             WHERE status IN (${placeholders}) AND merged_into IS NULL`,
           LIVE_ORDER_STATUSES,
         ),
+        query<ZoneRow>("SELECT * FROM zones ORDER BY name"),
       ]);
 
       setTables(tableRows);
+      setZones(zoneRows);
       setLiveOrders(Object.fromEntries(orderRows.map((o) => [o.table_id, o])));
       setError(null);
     } catch (e) {
@@ -65,8 +76,8 @@ export function FloorProvider({ children }: { children: ReactNode }) {
   }, [reload]);
 
   const value = useMemo<FloorState>(
-    () => ({ tables, liveOrders, loading, error, reload }),
-    [tables, liveOrders, loading, error, reload],
+    () => ({ tables, zones, liveOrders, loading, error, reload }),
+    [tables, zones, liveOrders, loading, error, reload],
   );
 
   return <FloorContext.Provider value={value}>{children}</FloorContext.Provider>;

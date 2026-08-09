@@ -372,7 +372,6 @@ export function InventoryRoute() {
                   onChange={(e) => setItemForm({ ...itemForm, minStock: e.currentTarget.value })}
                   className="font-mono tabular-nums"
                 />
-                <p className="text-xs text-muted-foreground">{t("inv.minStockHint")}</p>
               </div>
 
               <div className="flex items-center justify-between rounded-xl border border-border px-4 py-3">
@@ -440,7 +439,6 @@ export function InventoryRoute() {
                 placeholder="0"
                 className="font-mono tabular-nums"
               />
-              <p className="text-xs text-muted-foreground">{t("inv.quantityHint")}</p>
             </div>
 
             <div className="flex flex-col gap-2">

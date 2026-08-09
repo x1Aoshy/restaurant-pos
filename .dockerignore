@@ -1,0 +1,19 @@
+# Lo que NO se manda al demonio de Docker al construir la imagen.
+#
+# `src-tauri/target` llega a decenas de gigas después de una compilación de
+# release. Sin esta lista, cada `docker compose build` empieza empaquetándolos y
+# enviándolos, y parece que se ha colgado.
+
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+
+.git
+.vs
+.claude
+
+*.db
+*.sqlite
+*.db-wal
+*.db-shm

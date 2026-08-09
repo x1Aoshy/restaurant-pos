@@ -80,9 +80,6 @@ export function SyncSettings() {
             <Label htmlFor="sy-on" className="text-[13px]">
               {t("sync.enable")}
             </Label>
-            <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
-              {t("sync.enableHint")}
-            </p>
           </div>
           <Switch
             id="sy-on"
@@ -115,9 +112,6 @@ export function SyncSettings() {
             onChange={(e) => set("anonKey", e.currentTarget.value)}
             className="font-mono text-xs"
           />
-          <p className="text-xs leading-snug text-muted-foreground">
-            {t("sync.anonKeyHint")}
-          </p>
         </div>
 
         <div className="flex flex-col gap-2 px-4 py-3.5">
@@ -132,9 +126,6 @@ export function SyncSettings() {
             onChange={(e) => set("token", e.currentTarget.value)}
             className="font-mono text-xs"
           />
-          <p className="text-xs leading-snug text-muted-foreground">
-            {t("sync.venueTokenHint")}
-          </p>
         </div>
       </div>
 
@@ -188,9 +179,6 @@ export function SyncSettings() {
         </div>
       </div>
 
-      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-        {t("sync.setupNote")}
-      </p>
     </div>
   );
 }

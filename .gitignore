@@ -32,3 +32,6 @@ dist-ssr
 .claude/
 
 .vs/
+
+# El instalador usa los .bmp; los .png solo existen para mirarlos a ojo.
+src-tauri/installer/*.png

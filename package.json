@@ -1,7 +1,8 @@
 {
   "name": "restaurant",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,10 +11,15 @@
     "tauri": "tauri",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:schema": "node --experimental-sqlite scripts/check-schema.mjs",
-    "verify": "tsc --noEmit && npm run check:migrations && npm run check:i18n && npm run check:schema && npm run check:sync",
+    "verify": "tsc --noEmit && npm run check:migrations && npm run check:i18n && npm run check:schema && npm run check:sync && npm run check:business && npm run check:discount && npm run check:audit && npm run check:kitchen && npm run check:cash",
     "check:sync": "node --experimental-sqlite scripts/check-sync.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
-    "lock:migrations": "node scripts/check-migrations.mjs --update"
+    "lock:migrations": "node scripts/check-migrations.mjs --update",
+    "check:business": "node --experimental-sqlite scripts/check-business.mjs",
+    "check:discount": "node --experimental-sqlite scripts/check-discount.mjs",
+    "check:audit": "node --experimental-sqlite scripts/check-audit.mjs",
+    "check:kitchen": "node --experimental-sqlite scripts/check-kitchen.mjs",
+    "check:cash": "node --experimental-sqlite scripts/check-cash.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

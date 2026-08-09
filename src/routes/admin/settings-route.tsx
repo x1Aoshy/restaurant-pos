@@ -30,9 +30,10 @@ import { buildTicketPdf, ticketFileName } from "@/features/tickets/ticket-pdf";
 import { saveTicketPdf } from "@/features/tickets/save-ticket";
 import { useSampleTicket } from "@/features/tickets/sample-ticket";
 import { SyncSettings } from "@/features/sync/sync-settings";
+import { BackupSettings } from "@/features/backup/backup-settings";
 import { useTicketLabels } from "@/features/tickets/use-ticket-labels";
 
-type Tab = "venue" | "ticket" | "appearance" | "sync";
+type Tab = "venue" | "ticket" | "appearance" | "backup" | "sync";
 
 /** Una fila = un ajuste: etiqueta y explicación a la izquierda, control a la derecha. */
 function Row({
@@ -93,7 +94,12 @@ export function SettingsRoute() {
   // La muestra usa la tasa que hay ESCRITA, no la guardada: así el efecto de
   // subir el impuesto se ve en el ticket antes de pulsar «Guardar».
   const labels = useTicketLabels();
-  const sample = useSampleTicket(parseBp(taxText) ?? settings?.default_tax_bp ?? 0);
+  // También la moneda ESCRITA: cambiarla de córdobas a dólares cambia los
+  // billetes con los que se paga, y con ellos la línea de vuelto de la muestra.
+  const sample = useSampleTicket(
+    parseBp(taxText) ?? settings?.default_tax_bp ?? 0,
+    form?.currency ?? settings?.currency ?? "USD",
+  );
 
   const dirty = useRef(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -202,6 +208,7 @@ export function SettingsRoute() {
     { id: "venue", label: t("settings.tabVenue") },
     { id: "ticket", label: t("settings.tabTicket") },
     { id: "appearance", label: t("settings.tabAppearance") },
+    { id: "backup", label: t("settings.tabBackup") },
     { id: "sync", label: t("settings.tabSync") },
   ];
 
@@ -251,6 +258,12 @@ export function SettingsRoute() {
             {x.label}
           </button>
         ))}
+        {/* La versión instalada, a mano y sin buscarla. Cuando algo va mal, lo
+            primero que hace falta saber es qué compilación está corriendo en
+            ese equipo — y quien lo mira suele estar por teléfono. */}
+        <span className="ml-auto self-center font-mono text-[11px] text-muted-foreground tabular-nums">
+          v{__APP_VERSION__}
+        </span>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
@@ -258,7 +271,7 @@ export function SettingsRoute() {
           {tab === "venue" ? (
             <div className="max-w-2xl">
               <Card>
-                <Row label={t("settings.name")} hint={t("settings.nameHint")} htmlFor="s-name">
+                <Row label={t("settings.name")} htmlFor="s-name">
                   <Input
                     id="s-name"
                     value={form.restaurant_name}
@@ -303,7 +316,7 @@ export function SettingsRoute() {
                       </SelectContent>
                     </Select>
                   </Row>
-                  <Row label={t("settings.defaultTax")} hint={t("settings.taxesDesc")} htmlFor="s-tax">
+                  <Row label={t("settings.defaultTax")} htmlFor="s-tax">
                     <div className="flex items-center gap-2">
                       <Input
                         id="s-tax"
@@ -321,9 +334,6 @@ export function SettingsRoute() {
                     </div>
                   </Row>
                 </Card>
-                <p className="mt-2 px-1 text-xs text-muted-foreground">
-                  {t("settings.taxExampleLocal")}
-                </p>
               </div>
             </div>
           ) : null}
@@ -349,7 +359,7 @@ export function SettingsRoute() {
                       onChange={(e) => set("ticket_footer", e.currentTarget.value)}
                     />
                   </Row>
-                  <Row label={t("settings.format")} hint={t("settings.formatHint")} htmlFor="s-format">
+                  <Row label={t("settings.format")} htmlFor="s-format">
                     <Select
                       value={form.ticket_format}
                       onValueChange={(v: string | null) => {
@@ -369,7 +379,7 @@ export function SettingsRoute() {
                       </SelectContent>
                     </Select>
                   </Row>
-                  <Row label={t("settings.breakdown")} hint={t("settings.breakdownDesc")} htmlFor="s-breakdown">
+                  <Row label={t("settings.breakdown")} htmlFor="s-breakdown">
                     <div className="flex justify-end">
                       <Switch
                         id="s-breakdown"
@@ -476,12 +486,11 @@ export function SettingsRoute() {
                     ) : null}
                   </div>
                 </div>
-                <p className="mt-2 text-xs leading-snug text-muted-foreground">
-                  {t("settings.previewNote")}
-                </p>
               </div>
             </div>
           ) : null}
+
+          {tab === "backup" ? <BackupSettings /> : null}
 
           {tab === "sync" ? <SyncSettings /> : null}
 
@@ -522,12 +531,12 @@ export function SettingsRoute() {
 
               <div className="mt-4">
                 <Card>
-                  <Row label={t("appearance.dark")} hint={t("appearance.darkHint")} htmlFor="s-dark">
+                  <Row label={t("appearance.dark")} htmlFor="s-dark">
                     <div className="flex justify-end">
                       <Switch id="s-dark" checked={dark} onCheckedChange={toggle} />
                     </div>
                   </Row>
-                  <Row label={t("appearance.language")} hint={t("appearance.languageHintLocal")} htmlFor="s-lang">
+                  <Row label={t("appearance.language")} htmlFor="s-lang">
                     <Select
                       value={lang}
                       onValueChange={(v: string | null) => {

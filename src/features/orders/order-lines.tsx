@@ -1,8 +1,9 @@
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Ban, Minus, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { formatCents } from "@/lib/format";
 import { formatBp } from "@/lib/money";
 import { useI18n } from "@/providers/i18n-provider";
@@ -20,12 +21,16 @@ export function OrderLines({
   items,
   taxBreakdown,
   onQuantity,
+  onVoid,
+  canVoid,
   readOnly,
 }: {
   order: OrderRow;
   items: OrderLine[];
   taxBreakdown: TaxRow[];
   onQuantity: (item: OrderLine, quantity: number) => void;
+  onVoid: (item: OrderLine) => void;
+  canVoid: boolean;
   readOnly: boolean;
 }) {
   const { t } = useI18n();
@@ -40,53 +45,97 @@ export function OrderLines({
             </p>
           ) : null}
 
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="group flex items-center gap-2 rounded-md px-2 py-2 transition-colors duration-150 hover:bg-muted/50"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm tracking-tight">
-                  {item.product_name}
-                </div>
-                <div className="mt-0.5 font-mono text-[0.65rem] tabular-nums text-muted-foreground">
-                  {formatCents(item.unit_price_cents)} · {formatBp(item.tax_bp)}
-                </div>
-              </div>
+          {items.map((item) => {
+            const voided = item.voided_at !== null;
+            const net = item.quantity * item.unit_price_cents - item.discount_cents;
 
-              {readOnly ? (
-                <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                  {item.quantity}×
-                </span>
-              ) : (
-                <div className="flex items-center gap-0.5">
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={t("a11y.removeUnit")}
-                    onClick={() => onQuantity(item, item.quantity - 1)}
+            return (
+              <div
+                key={item.id}
+                className={cn(
+                  "group flex items-center gap-2 rounded-md px-2 py-2",
+                  "transition-colors duration-150 hover:bg-muted/50",
+                  // La anulada se queda a la vista, apagada. Ocultarla sería lo
+                  // mismo que borrarla, y el motivo de no borrarla es que se vea.
+                  voided && "opacity-50",
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={cn(
+                      "truncate text-sm tracking-tight",
+                      voided && "line-through",
+                    )}
                   >
-                    {item.quantity === 1 ? <Trash2 /> : <Minus />}
-                  </Button>
-                  <span className="w-6 text-center font-mono text-sm tabular-nums">
-                    {item.quantity}
+                    {item.product_name}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[0.65rem] tabular-nums text-muted-foreground">
+                    {voided
+                      ? `${t("void.voided")}${item.void_reason ? ` · ${item.void_reason}` : ""}`
+                      : `${formatCents(item.unit_price_cents)} · ${formatBp(item.tax_bp)}`}
+                  </div>
+                </div>
+
+                {readOnly || voided ? (
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {item.quantity}×
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={t("a11y.addUnit")}
-                    onClick={() => onQuantity(item, item.quantity + 1)}
-                  >
-                    <Plus />
-                  </Button>
-                </div>
-              )}
+                ) : (
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={t("a11y.removeUnit")}
+                      // Con una sola unidad no queda nada que restar: quitarla
+                      // entera es anular, y eso tiene su propio botón y su
+                      // propio motivo.
+                      disabled={item.quantity === 1}
+                      onClick={() => onQuantity(item, item.quantity - 1)}
+                    >
+                      <Minus />
+                    </Button>
+                    <span className="w-6 text-center font-mono text-sm tabular-nums">
+                      {item.quantity}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={t("a11y.addUnit")}
+                      onClick={() => onQuantity(item, item.quantity + 1)}
+                    >
+                      <Plus />
+                    </Button>
+                    {canVoid ? (
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        title={t("void.title")}
+                        aria-label={t("void.title")}
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => onVoid(item)}
+                      >
+                        <Ban />
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
 
-              <span className="w-20 shrink-0 text-right font-mono text-sm tabular-nums">
-                {formatCents(item.quantity * item.unit_price_cents)}
-              </span>
-            </div>
-          ))}
+                <span
+                  className={cn(
+                    "w-20 shrink-0 text-right font-mono text-sm tabular-nums",
+                    voided && "line-through",
+                  )}
+                >
+                  {item.discount_cents > 0 && !voided ? (
+                    <span className="mr-1 text-[0.65rem] text-muted-foreground line-through">
+                      {formatCents(item.quantity * item.unit_price_cents)}
+                    </span>
+                  ) : null}
+                  {formatCents(net)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </ScrollArea>
 
@@ -97,6 +146,18 @@ export function OrderLines({
             {formatCents(order.subtotal_cents)}
           </span>
         </div>
+
+        {order.discount_cents > 0 ? (
+          <div className="mt-1.5 flex items-baseline justify-between text-xs">
+            <span className="text-status-billed">
+              {t("ticket.discount")}
+              {order.discount_reason ? ` · ${order.discount_reason}` : ""}
+            </span>
+            <span className="font-mono tabular-nums text-status-billed">
+              −{formatCents(order.discount_cents)}
+            </span>
+          </div>
+        ) : null}
 
         {taxBreakdown.map((row) => (
           <div

@@ -1,22 +1,22 @@
-//! Transacciones de verdad sobre la base local.
+//! Real transactions against the local database.
 //!
-//! ## Por qué hace falta esto
+//! ## Why this is needed
 //!
-//! `tauri-plugin-sql` mantiene un *pool* de conexiones (diez, por defecto) y
-//! resuelve cada llamada con la que tenga libre en ese momento. Encadenar
-//! `BEGIN`, las sentencias y `COMMIT` como tres llamadas separadas —que es lo
-//! que hacía el ayudante de JavaScript— sale mal de tres maneras a la vez:
+//! `tauri-plugin-sql` keeps a connection *pool* (ten by default) and serves
+//! each call with whichever connection is free at that moment. Chaining
+//! `BEGIN`, the statements and `COMMIT` as three separate calls — which is what
+//! the JavaScript helper used to do — goes wrong in three ways at once:
 //!
-//! 1. El `BEGIN` abre la transacción en una conexión y esta vuelve al pool con
-//!    la transacción abierta.
-//! 2. Las sentencias de dentro se ejecutan en otras conexiones, o sea **fuera**
-//!    de la transacción. La atomicidad era decorativa.
-//! 3. El `COMMIT` cae donde caiga. La conexión del paso 1 se queda con el
-//!    candado de escritura tomado para siempre, y a partir de ahí cualquier
-//!    escritura responde «database is locked».
+//! 1. The `BEGIN` opens the transaction on one connection, which then returns
+//!    to the pool with the transaction still open.
+//! 2. The statements inside run on other connections, that is, **outside** the
+//!    transaction. The atomicity was decorative.
+//! 3. The `COMMIT` lands wherever it lands. The connection from step 1 keeps
+//!    the write lock forever, and from then on every write answers
+//!    "database is locked".
 //!
-//! Aquí se toma **una** conexión, se hace todo dentro y se cierra. Si algo
-//! falla, `Transaction` deshace al soltarse.
+//! Here **one** connection is taken, everything happens inside it, and it is
+//! closed. If anything fails, `Transaction` rolls back when it is dropped.
 
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -31,8 +31,8 @@ pub struct Statement {
     values: Vec<JsonValue>,
 }
 
-/// Mismo criterio de conversión que usa el plugin, para que una sentencia se
-/// comporte igual dentro y fuera de una transacción.
+/// The same conversion rules the plugin uses, so a statement behaves the same
+/// inside a transaction as it does outside one.
 fn bind<'q>(
     mut query: sqlx::query::Query<'q, Sqlite, sqlx::sqlite::SqliteArguments<'q>>,
     values: Vec<JsonValue>,
@@ -49,7 +49,7 @@ fn bind<'q>(
         } else if let Some(f) = value.as_f64() {
             query = query.bind(f);
         } else {
-            // Objetos y arrays viajan como texto JSON, igual que en el plugin.
+            // Objects and arrays travel as JSON text, same as in the plugin.
             query = query.bind(value.to_string());
         }
     }
@@ -63,11 +63,11 @@ pub async fn sql_transaction(
     instances: State<'_, DbInstances>,
 ) -> Result<(), String> {
     let map = instances.0.read().await;
-    // `DbPool` solo tiene la variante SQLite: es la única característica
-    // activada del plugin, a propósito, para no meter Postgres ni MySQL en el
-    // instalador.
+    // `DbPool` only has the SQLite variant: it is the only plugin feature
+    // enabled, deliberately, so that Postgres and MySQL drivers stay out of the
+    // installer.
     let Some(DbPool::Sqlite(pool)) = map.get(&db) else {
-        return Err(format!("la base «{db}» no está abierta"));
+        return Err(format!("database \"{db}\" is not open"));
     };
 
     let mut tx: Transaction<'_, Sqlite> = pool.begin().await.map_err(|e| e.to_string())?;
@@ -76,25 +76,25 @@ pub async fn sql_transaction(
         bind(sqlx::query(&statement.sql), statement.values)
             .execute(&mut *tx)
             .await
-            // Al salir por aquí `tx` se suelta sin confirmar y SQLite deshace
-            // lo hecho hasta ahora. Ese es justo el comportamiento que se
-            // buscaba desde el principio.
+            // Leaving through here drops `tx` without committing and SQLite
+            // undoes everything done so far. That is exactly the behaviour this
+            // was written for.
             .map_err(|e| format!("{}: {e}", statement.sql.trim()))?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())
 }
 
-/// Aplica cambios llegados de otro terminal.
+/// Applies changes that arrived from another terminal.
 ///
-/// Levanta `sync_context.applying` antes y la baja después, **dentro de la
-/// misma transacción y la misma conexión**. Con la bandera arriba los triggers
-/// del buzón callan; si no, cada cambio recibido se volvería a apuntar como
-/// propio y rebotaría entre equipos para siempre.
+/// Raises `sync_context.applying` before and lowers it after, **inside the same
+/// transaction and the same connection**. With the flag up the outbox triggers
+/// stay quiet; without it, every received change would be recorded again as if
+/// it were local and would bounce between machines forever.
 ///
-/// Eso solo es fiable desde aquí: hacerlo con dos llamadas desde JavaScript
-/// dejaría la bandera levantada en una conexión cualquiera del pool, y afectaría
-/// a escrituras que no tienen nada que ver.
+/// This is only reliable from here: doing it with two calls from JavaScript
+/// would leave the flag raised on some arbitrary connection in the pool, and it
+/// would affect writes that have nothing to do with syncing.
 #[tauri::command]
 pub async fn sql_apply_remote(
     db: String,
@@ -104,7 +104,7 @@ pub async fn sql_apply_remote(
 ) -> Result<(), String> {
     let map = instances.0.read().await;
     let Some(DbPool::Sqlite(pool)) = map.get(&db) else {
-        return Err(format!("la base «{db}» no está abierta"));
+        return Err(format!("database \"{db}\" is not open"));
     };
 
     let mut tx: Transaction<'_, Sqlite> = pool.begin().await.map_err(|e| e.to_string())?;
@@ -121,9 +121,9 @@ pub async fn sql_apply_remote(
             .map_err(|e| format!("{}: {e}", statement.sql.trim()))?;
     }
 
-    // `last_seq` se guarda en la misma transacción que los cambios: si se
-    // guardara aparte y fallara, el terminal volvería a pedir lo que ya aplicó,
-    // o peor, se saltaría cambios que no llegó a aplicar.
+    // `last_seq` is stored in the same transaction as the changes. Stored
+    // separately and failing, the terminal would ask again for what it already
+    // applied or, worse, skip changes it never applied.
     sqlx::query("UPDATE sync_context SET applying = 0, last_seq = ?1 WHERE id = 1")
         .bind(last_seq)
         .execute(&mut *tx)

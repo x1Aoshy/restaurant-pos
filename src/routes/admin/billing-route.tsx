@@ -26,7 +26,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { exec, query } from "@/lib/db";
-import { formatCents } from "@/lib/format";
+import { formatCents, tableLabel } from "@/lib/format";
 import { formatBp, lineTaxCents } from "@/lib/money";
 import { useFloor } from "@/providers/floor-provider";
 import { useI18n } from "@/providers/i18n-provider";
@@ -44,6 +44,7 @@ interface ReceiptLine {
   quantity: number;
   unit_price_cents: number;
   tax_bp: number;
+  discount_cents: number;
 }
 
 const STATUS_KEY: Record<OrderStatus, string> = {
@@ -129,10 +130,12 @@ export function BillingRoute() {
     }
     let alive = true;
     void query<ReceiptLine>(
-      `SELECT oi.id, p.name, oi.quantity, oi.unit_price_cents, oi.tax_bp
+      // Las anuladas no salen: el cliente no pagó lo que volvió a la cocina.
+      `SELECT oi.id, p.name, oi.quantity, oi.unit_price_cents, oi.tax_bp,
+              oi.discount_cents
          FROM order_items oi
          JOIN products p ON p.id = oi.product_id
-        WHERE oi.order_id = $1
+        WHERE oi.order_id = $1 AND oi.voided_at IS NULL
         ORDER BY oi.created_at`,
       [receipt.id],
     ).then((data) => {
@@ -177,8 +180,10 @@ export function BillingRoute() {
     const map = new Map<number, { base: number; tax: number }>();
     for (const l of lines) {
       const entry = map.get(l.tax_bp) ?? { base: 0, tax: 0 };
-      entry.base += l.quantity * l.unit_price_cents;
-      entry.tax += lineTaxCents(l.quantity, l.unit_price_cents, l.tax_bp);
+      // Base rebajada por el descuento, igual que en los triggers de la base.
+      const base = l.quantity * l.unit_price_cents - l.discount_cents;
+      entry.base += base;
+      entry.tax += lineTaxCents(1, base, l.tax_bp);
       map.set(l.tax_bp, entry);
     }
     return Array.from(map.entries())
@@ -275,8 +280,8 @@ export function BillingRoute() {
                         STATUS_TONE[order.status],
                       )}
                     />
-                    <span className="font-mono text-sm font-semibold tabular-nums">
-                      {String(order.table_number).padStart(2, "0")}
+                    <span className="truncate font-mono text-sm font-semibold tabular-nums">
+                      {tableLabel(order.table_number, t("pos.counterShort"))}
                     </span>
                   </div>
 
@@ -381,8 +386,9 @@ export function BillingRoute() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {t("billing.table")}{" "}
-              {String(receipt?.table_number ?? 0).padStart(2, "0")}
+              {receipt?.table_number === 0
+                ? t("pos.counterShort")
+                : `${t("billing.table")} ${tableLabel(receipt?.table_number ?? 0, "")}`}
             </DialogTitle>
             <DialogDescription className="font-mono text-xs">
               {localDateTime(receipt?.created_at ?? null)} ·{" "}
@@ -411,7 +417,7 @@ export function BillingRoute() {
                         {formatBp(l.tax_bp)}
                       </span>
                       <span className="font-mono tabular-nums">
-                        {formatCents(l.quantity * l.unit_price_cents)}
+                        {formatCents(l.quantity * l.unit_price_cents - l.discount_cents)}
                       </span>
                     </span>
                   </div>
@@ -426,6 +432,18 @@ export function BillingRoute() {
                   {formatCents(receipt?.subtotal_cents ?? 0)}
                 </span>
               </div>
+              {receipt && receipt.discount_cents > 0 ? (
+                <div className="mt-1.5 flex items-baseline justify-between text-xs text-muted-foreground">
+                  <span>
+                    {t("ticket.discount")}
+                    {receipt.discount_reason ? ` · ${receipt.discount_reason}` : ""}
+                  </span>
+                  <span className="font-mono tabular-nums">
+                    −{formatCents(receipt.discount_cents)}
+                  </span>
+                </div>
+              ) : null}
+
               {taxRows.map((r) => (
                 <div
                   key={r.bp}
@@ -438,14 +456,27 @@ export function BillingRoute() {
                 </div>
               ))}
 
+              {receipt && receipt.tip_cents > 0 ? (
+                <div className="mt-1.5 flex items-baseline justify-between text-xs text-muted-foreground">
+                  <span>{t("ticket.tip")}</span>
+                  <span className="font-mono tabular-nums">
+                    {formatCents(receipt.tip_cents)}
+                  </span>
+                </div>
+              ) : null}
+
               <Separator className="my-4" />
 
               <div className="flex items-baseline justify-between">
                 <span className="text-sm font-semibold tracking-tight">
-                  {t("pos.total")}
+                  {/* Con propina lo que manda es lo que se pagó; sin ella, el
+                      total de siempre. Dos cifras casi iguales solo confunden. */}
+                  {receipt && receipt.tip_cents > 0
+                    ? t("ticket.totalPaid")
+                    : t("pos.total")}
                 </span>
                 <span className="font-mono text-xl font-semibold tabular-nums tracking-tight">
-                  {formatCents(receipt?.total_cents ?? 0)}
+                  {formatCents((receipt?.total_cents ?? 0) + (receipt?.tip_cents ?? 0))}
                 </span>
               </div>
             </div>

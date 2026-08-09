@@ -19,6 +19,9 @@ import { DashboardRoute } from "@/routes/admin/dashboard-route";
 import { ProductsRoute } from "@/routes/admin/products-route";
 import { InventoryRoute } from "@/routes/admin/inventory-route";
 import { ExpensesRoute } from "@/routes/admin/expenses-route";
+import { RegisterRoute } from "@/routes/admin/register-route";
+import { PrintersRoute } from "@/routes/admin/printers-route";
+import { AuditRoute } from "@/routes/admin/audit-route";
 import { BillingRoute } from "@/routes/admin/billing-route";
 import { TablesRoute } from "@/routes/admin/tables-route";
 import { UsersRoute } from "@/routes/admin/users-route";
@@ -68,9 +71,12 @@ function Gate() {
               <Route path="admin/products" element={<ProductsRoute />} />
               <Route path="admin/inventory" element={<InventoryRoute />} />
               <Route path="admin/expenses" element={<ExpensesRoute />} />
+              <Route path="admin/register" element={<RegisterRoute />} />
               <Route path="admin/billing" element={<BillingRoute />} />
+              <Route path="admin/audit" element={<AuditRoute />} />
               <Route path="admin/tables" element={<TablesRoute />} />
               <Route path="admin/users" element={<UsersRoute />} />
+              <Route path="admin/printers" element={<PrintersRoute />} />
               <Route path="admin/settings" element={<SettingsRoute />} />
               <Route path="*" element={<Navigate to="/pos" replace />} />
             </Route>

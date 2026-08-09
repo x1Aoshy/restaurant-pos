@@ -2,6 +2,18 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
+import { readFileSync } from "node:fs";
+
+/**
+ * La versión se incrusta al compilar en lugar de leerse en marcha.
+ *
+ * Preguntarla a Tauri obligaría a abrir un permiso más y a esperar una promesa
+ * para pintar un texto de seis caracteres. Aquí no puede desincronizarse: sale
+ * del mismo `package.json` que se publica.
+ */
+const { version } = JSON.parse(
+  readFileSync(fileURLToPath(new URL("./package.json", import.meta.url)), "utf8"),
+);
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -9,6 +21,10 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
+
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
 
   resolve: {
     alias: {

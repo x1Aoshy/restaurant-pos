@@ -1,9 +1,12 @@
 import { NavLink } from "react-router";
 import {
   ChartNoAxesColumn,
+  ShieldCheck,
   LayoutGrid,
   Package,
+  Printer,
   ReceiptText,
+  Wallet as WalletIcon,
   Settings,
   Users,
   Wallet,
@@ -33,6 +36,8 @@ const GROUPS: {
     items: [
       { to: "/admin", end: true, icon: ChartNoAxesColumn, label: "nav.overview" },
       { to: "/admin/billing", icon: ReceiptText, label: "nav.billing" },
+      { to: "/admin/audit", icon: ShieldCheck, label: "nav.audit" },
+      { to: "/admin/register", icon: WalletIcon, label: "nav.register" },
       { to: "/admin/expenses", icon: Wallet, label: "nav.expenses" },
     ],
   },
@@ -48,6 +53,7 @@ const GROUPS: {
     items: [
       { to: "/admin/tables", icon: LayoutGrid, label: "nav.tablesAdmin" },
       { to: "/admin/users", icon: Users, label: "nav.users" },
+      { to: "/admin/printers", icon: Printer, label: "nav.printers" },
       { to: "/admin/settings", icon: Settings, label: "nav.settings" },
     ],
   },

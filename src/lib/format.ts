@@ -75,6 +75,19 @@ export function daysAgoLocal(days: number): string {
   return todayLocal(d);
 }
 
+/**
+ * La mesa 0 no es una mesa: es el mostrador.
+ *
+ * Se reservó ese número para poder cobrar en la barra sin ocupar sitio, pero
+ * enseñarlo como «00» en el historial no le dice nada a nadie. Cualquier sitio
+ * que pinte un número de mesa pasa por aquí.
+ */
+export const COUNTER_TABLE = 0;
+
+export function tableLabel(number: number, counterName: string): string {
+  return number === COUNTER_TABLE ? counterName : String(number).padStart(2, "0");
+}
+
 /** Tiempo transcurrido compacto desde un ISO — "8m", "1h 12m". */
 export function elapsedSince(iso: string, now: number = Date.now()) {
   const mins = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000));

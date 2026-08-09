@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { daysAgoLocal } from "@/lib/format";
+import { SHIFT_SQL } from "@/lib/sql-time";
 
 /**
  * Agregados del resumen.
@@ -9,18 +10,6 @@ import { daysAgoLocal } from "@/lib/format";
  * las 18:00 —las horas de más venta— contaba como del día siguiente. Por eso
  * cada consulta desplaza la marca a la hora local antes de recortar la fecha.
  */
-const OFFSET_MINUTES = -new Date().getTimezoneOffset();
-const TZ_SHIFT = `${OFFSET_MINUTES >= 0 ? "+" : ""}${OFFSET_MINUTES} minutes`;
-
-/**
- * El desplazamiento se interpola en el SQL en vez de ir como parámetro.
- *
- * Aparece dos veces en cada consulta y repetir un marcador depende de cómo
- * SQLite reparte los índices; no merece la pena apostar. El valor no viene de
- * ninguna entrada del usuario: lo produce el reloj del sistema y esta expresión
- * lo deja en «±NNN minutes» sin margen para otra cosa.
- */
-const SHIFT_SQL = `'${TZ_SHIFT}'`;
 
 export interface DayTotals {
   day: string;

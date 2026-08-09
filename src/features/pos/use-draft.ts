@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { newId, queryOne, transaction, type Statement } from "@/lib/db";
+import { exec, newId, queryOne, transaction, type Statement } from "@/lib/db";
 import { lineTaxCents } from "@/lib/money";
 import { useFloor } from "@/providers/floor-provider";
 import { useSession } from "@/providers/session-provider";
 import { useI18n } from "@/providers/i18n-provider";
 import { LIVE_ORDER_STATUSES, type OrderRow, type ProductRow } from "@/types/local";
+import { usePrinting } from "@/features/printing/use-printing";
 
 export interface DraftLine {
   product: ProductRow;
@@ -28,6 +29,7 @@ export function useDraft() {
   const { staff, settings } = useSession();
   const { tables, liveOrders, reload } = useFloor();
   const { t } = useI18n();
+  const { printKitchen } = usePrinting();
 
   const [tableNumber, setTableNumber] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
@@ -99,6 +101,115 @@ export function useDraft() {
     };
   }, [lines, settings?.default_tax_bp, existingOrder?.tax_bp]);
 
+  /**
+   * Venta de mostrador: se apunta y se cobra de una vez, sin ocupar mesa.
+   *
+   * Es lo que hace falta en la barra para el cliente que pide una cerveza,
+   * paga y se va. Antes había que ocupar una mesa durante diez segundos, que
+   * en hora punta es exactamente la mesa que hace falta.
+   *
+   * Va a una mesa reservada, la número 0, que no sale en el salón. No hace
+   * falta nada más: la cuenta se crea y se cobra **en la misma transacción**,
+   * así que nunca llega a estar viva y el índice de una cuenta por mesa no
+   * tiene nada que impedir. Dos ventas seguidas no chocan porque la primera ya
+   * está pagada cuando empieza la segunda.
+   */
+  const counterSale = useCallback(
+    async (
+      method: string,
+      reference: string,
+      tipCents: number,
+      /** Efectivo entregado. Nulo si no se anotó. */
+      tenderedCents: number | null,
+      /** Descuento por línea, en el orden del borrador. */
+      discount?: { parts: number[]; reason: string } | null,
+    ) => {
+      if (lines.length === 0) return false;
+      setSaving(true);
+      try {
+        // La mesa del mostrador se crea sola la primera vez. Pedirle a nadie
+        // que la dé de alta a mano sería un paso que no aporta.
+        let counter = await queryOne<{ id: string }>(
+          "SELECT id FROM tables WHERE number = 0",
+        );
+        if (!counter) {
+          const id = newId();
+          await exec(
+            "INSERT INTO tables (id, number, capacity) VALUES ($1, 0, 1)",
+            [id],
+          );
+          counter = { id };
+        }
+
+        const orderId = newId();
+        const orderBp = settings?.default_tax_bp ?? 1000;
+        const statements: Statement[] = [
+          {
+            sql: `INSERT INTO orders (id, table_id, tax_bp, opened_by)
+                  VALUES ($1, $2, $3, $4)`,
+            values: [orderId, counter.id, orderBp, staff?.id ?? null],
+          },
+        ];
+        // El descuento entra con las líneas, no después: en el mostrador no
+        // existe el momento intermedio en que la cuenta está abierta y se le
+        // puede aplicar algo.
+        lines.forEach((line, i) => {
+          statements.push({
+            sql: `INSERT INTO order_items
+                    (id, order_id, product_id, quantity, unit_price_cents, tax_bp,
+                     discount_cents)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            values: [
+              newId(),
+              orderId,
+              line.product.id,
+              line.quantity,
+              line.product.price_cents,
+              line.product.tax_bp ?? orderBp,
+              discount?.parts[i] ?? 0,
+            ],
+          });
+        });
+
+        if (discount && discount.parts.some((d) => d > 0)) {
+          statements.push({
+            sql: `UPDATE orders SET discount_reason = $1, discount_by = $2
+                   WHERE id = $3`,
+            values: [discount.reason, staff?.id ?? null, orderId],
+          });
+        }
+        // El cobro va en la MISMA transacción. Si quedara fuera, un fallo entre
+        // medias dejaría una venta de mostrador abierta y bloqueando la
+        // siguiente.
+        statements.push({
+          sql: `UPDATE orders
+                   SET status = 'paid', payment_method = $1, payment_ref = $2,
+                       tip_cents = $3, tendered_cents = $4
+                 WHERE id = $5`,
+          values: [
+            method,
+            reference || null,
+            Math.max(0, Math.round(tipCents)),
+            tenderedCents === null ? null : Math.max(0, Math.round(tenderedCents)),
+            orderId,
+          ],
+        });
+
+        await transaction(statements);
+        await printKitchen(orderId, 0, null);
+        clear();
+        await reload();
+        return orderId;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [lines, settings?.default_tax_bp, staff?.id, clear, reload, printKitchen],
+  );
+
   const commit = useCallback(async () => {
     if (!table) {
       toast.error(t("pos.noTable", { n: tableNumber || "—" }));
@@ -157,6 +268,15 @@ export function useDraft() {
 
       await transaction(statements);
 
+      // La comanda sale a cocina y barra en cuanto está guardada, nunca antes:
+      // si la transacción fallara, el papel ya estaría en la plancha y alguien
+      // cocinaría algo que no existe en el sistema.
+      //
+      // Solo lo que se acaba de añadir tendría sentido imprimir, pero por ahora
+      // se manda la cuenta entera; con una comanda por ronda es lo que se hace
+      // en papel de todas formas.
+      await printKitchen(orderId, table.number, table.zone_id);
+
       const count = lines.reduce((n, l) => n + l.quantity, 0);
       toast.success(t("pos.savedTitle", { n: table.number }), {
         description:
@@ -169,7 +289,7 @@ export function useDraft() {
     } finally {
       setSaving(false);
     }
-  }, [table, tableNumber, lines, settings?.default_tax_bp, staff?.id, clear, reload, t]);
+  }, [table, tableNumber, lines, settings?.default_tax_bp, staff?.id, clear, reload, printKitchen, t]);
 
   return {
     tableNumber,
@@ -183,5 +303,6 @@ export function useDraft() {
     setQuantity,
     clear,
     commit,
+    counterSale,
   };
 }

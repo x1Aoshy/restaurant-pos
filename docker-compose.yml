@@ -1,0 +1,40 @@
+# Entorno de desarrollo reproducible.
+#
+#   docker compose run --rm dev npm install
+#   docker compose run --rm dev npm run verify
+#
+# Lo que NO hace: enseñar la ventana de la aplicación. Un contenedor no tiene
+# pantalla, y esto es una aplicación de escritorio. Ver la interfaz necesita un
+# servidor gráfico del anfitrión — cómo hacerlo está en CONTRIBUTING.md, y solo
+# sale a cuenta si el anfitrión es Linux.
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    working_dir: /app
+    volumes:
+      - .:/app
+      # `node_modules` y `target` viven en volúmenes y no en el disco del
+      # anfitrión. Además de ser mucho más rápido, evita que los binarios de
+      # Linux del contenedor pisen los de Windows de quien está compilando
+      # fuera: son incompatibles y el error que dan no lo dice.
+      - node_modules:/app/node_modules
+      - cargo_target:/app/src-tauri/target
+      # La caché de crates entre ejecuciones. Sin esto, cada `cargo test`
+      # descarga y compila el árbol entero otra vez.
+      - cargo_registry:/usr/local/cargo/registry
+    ports:
+      # Vite. Solo sirve para mirar la compilación del frontend; la aplicación
+      # de verdad necesita el proceso de Tauri detrás.
+      - "1420:1420"
+    # Sin esto el contenedor se cierra en cuanto termina el comando, que es
+    # justo lo que se quiere con `run --rm`. Para dejarlo levantado y entrar
+    # varias veces: `docker compose up -d` y luego `docker compose exec dev bash`.
+    command: sleep infinity
+
+volumes:
+  node_modules:
+  cargo_target:
+  cargo_registry:

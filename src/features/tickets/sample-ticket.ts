@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { query } from "@/lib/db";
 import { lineTaxCents } from "@/lib/money";
+import { cashSuggestions, notesFor } from "@/features/orders/cash";
 import { useI18n } from "@/providers/i18n-provider";
 import type { TicketLine } from "@/features/tickets/ticket-pdf";
 
@@ -9,8 +10,11 @@ export interface SampleTicket {
   lines: TicketLine[];
   taxBreakdown: { bp: number; base: number; tax: number }[];
   subtotalCents: number;
+  discountCents: number;
   taxCents: number;
   totalCents: number;
+  tipCents: number;
+  tenderedCents: number | null;
 }
 
 interface SampleProduct {
@@ -22,7 +26,7 @@ interface SampleProduct {
 /** Cantidades fijas: una muestra con tres unos no enseña cómo queda la columna. */
 const QUANTITIES = [2, 1, 3];
 
-function summarize(lines: TicketLine[]): SampleTicket {
+function summarize(lines: TicketLine[], currency: string): SampleTicket {
   const map = new Map<number, { base: number; tax: number }>();
   for (const l of lines) {
     const entry = map.get(l.bp) ?? { base: 0, tax: 0 };
@@ -36,12 +40,19 @@ function summarize(lines: TicketLine[]): SampleTicket {
 
   const subtotalCents = lines.reduce((n, l) => n + l.subtotalCents, 0);
   const taxCents = taxBreakdown.reduce((n, b) => n + b.tax, 0);
+  const totalCents = subtotalCents + taxCents;
   return {
     lines,
     taxBreakdown,
     subtotalCents,
+    discountCents: 0,
     taxCents,
-    totalCents: subtotalCents + taxCents,
+    totalCents,
+    tipCents: 0,
+    // La muestra paga con un billete de más, para que la previsualización
+    // enseñe las líneas de entregado y vuelto. Son las que más se acercan al
+    // borde del papel y las que hay que mirar antes de dar el formato por bueno.
+    tenderedCents: cashSuggestions(totalCents, notesFor(currency))[0] ?? null,
   };
 }
 
@@ -57,7 +68,10 @@ function summarize(lines: TicketLine[]): SampleTicket {
  * si no, teclear «15» en el campo del impuesto lanzaría una consulta por
  * pulsación.
  */
-export function useSampleTicket(defaultTaxBp: number): SampleTicket {
+export function useSampleTicket(
+  defaultTaxBp: number,
+  currency: string,
+): SampleTicket {
   const { t } = useI18n();
   const [products, setProducts] = useState<SampleProduct[]>([]);
 
@@ -85,15 +99,19 @@ export function useSampleTicket(defaultTaxBp: number): SampleTicket {
 
   return useMemo(() => {
     if (products.length === 0) {
-      return summarize([
-        {
-          name: fallbackName,
-          quantity: 2,
-          unitPriceCents: 1000,
-          bp: defaultTaxBp,
-          subtotalCents: 2000,
-        },
-      ]);
+      return summarize(
+        [
+          {
+            name: fallbackName,
+            quantity: 2,
+            unitPriceCents: 1000,
+            bp: defaultTaxBp,
+            discountCents: 0,
+            subtotalCents: 2000,
+          },
+        ],
+        currency,
+      );
     }
 
     return summarize(
@@ -106,9 +124,11 @@ export function useSampleTicket(defaultTaxBp: number): SampleTicket {
           // Un producto sin tasa propia hereda la de la casa, y esa es la que
           // se está editando ahora mismo en el formulario de al lado.
           bp: p.tax_bp ?? defaultTaxBp,
+          discountCents: 0,
           subtotalCents: quantity * p.price_cents,
         };
       }),
+      currency,
     );
-  }, [products, defaultTaxBp, fallbackName]);
+  }, [products, defaultTaxBp, fallbackName, currency]);
 }

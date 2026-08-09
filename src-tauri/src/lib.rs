@@ -1,72 +1,128 @@
+mod backup;
+mod printer;
 mod tx;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Esquema local en SQLite.
+/// The local SQLite schema.
 ///
-/// El plugin lleva la cuenta de qué versiones se aplicaron, así que la base se
-/// crea y se actualiza sola al abrir la aplicación. Sin cuenta en ningún
-/// servicio y sin ejecutar SQL a mano.
+/// The plugin tracks which versions have been applied, so the database creates
+/// and upgrades itself when the app opens. No account with any service and no
+/// SQL to run by hand.
 ///
-/// Dos diferencias deliberadas respecto al esquema de Postgres:
+/// Two deliberate differences from a Postgres schema:
 ///
-/// 1. **El dinero se guarda en centavos, como enteros.** SQLite no tiene tipo
-///    decimal y almacenar importes en coma flotante produce descuadres de un
-///    centavo que luego nadie sabe explicar.
-/// 2. **Los enumerados pasan a CHECK.** SQLite no tiene tipos enumerados, pero
-///    la restricción da la misma garantía.
+/// 1. **Money is stored as whole cents.** SQLite has no decimal type, and
+///    keeping amounts in floating point produces one-cent gaps that nobody can
+///    explain afterwards.
+/// 2. **Enums become CHECK constraints.** SQLite has no enum type, but the
+///    constraint gives the same guarantee.
+///
+/// The text of these files is hashed into the migration checksum. Editing one
+/// that has already been applied stops the app from opening; a correction is
+/// made by adding the next migration.
 fn migrations() -> Vec<Migration> {
     vec![
         Migration {
             version: 1,
-            description: "esquema inicial",
+            description: "initial schema",
             kind: MigrationKind::Up,
             sql: include_str!("../migrations/001_initial.sql"),
         },
         Migration {
             version: 2,
-            description: "el libro de inventario apunta a la linea de comanda",
+            description: "stock ledger points at the order line",
             kind: MigrationKind::Up,
             sql: include_str!("../migrations/002_stock_ledger.sql"),
         },
         Migration {
             version: 3,
-            description: "idioma de partida en ingles",
+            description: "default language is english",
             kind: MigrationKind::Up,
             sql: include_str!("../migrations/003_default_language_en.sql"),
         },
         Migration {
             version: 4,
-            description: "buzon de cambios para sincronizar (apagado)",
+            description: "sync outbox (off by default)",
             kind: MigrationKind::Up,
             sql: include_str!("../migrations/004_sync_outbox.sql"),
         },
         Migration {
             version: 5,
-            description: "configuracion del servidor de sincronizacion",
+            description: "sync server settings",
             kind: MigrationKind::Up,
             sql: include_str!("../migrations/005_sync_config.sql"),
         },
         Migration {
             version: 6,
-            description: "fusion de comandas abiertas a la vez en dos terminales",
+            description: "merge tickets opened on two terminals at once",
             kind: MigrationKind::Up,
             sql: include_str!("../migrations/006_order_merge.sql"),
         },
         Migration {
             version: 7,
-            description: "merged_into sin clave foranea",
+            description: "merged_into without a foreign key",
             kind: MigrationKind::Up,
             sql: include_str!("../migrations/007_merge_no_fk.sql"),
         },
+        Migration {
+            version: 8,
+            description: "cash shifts, tips, discounts and printers",
+            kind: MigrationKind::Up,
+            sql: include_str!("../migrations/008_business_logic.sql"),
+        },
+        Migration {
+            version: 9,
+            description: "per-printer codepage and cut mode",
+            kind: MigrationKind::Up,
+            sql: include_str!("../migrations/009_printer_charset.sql"),
+        },
+        Migration {
+            version: 10,
+            description: "automatic backups",
+            kind: MigrationKind::Up,
+            sql: include_str!("../migrations/010_backups.sql"),
+        },
+        Migration {
+            version: 11,
+            description: "mark for lines sent to the kitchen",
+            kind: MigrationKind::Up,
+            sql: include_str!("../migrations/011_kitchen_sent.sql"),
+        },
+        Migration {
+            version: 12,
+            description: "cash tendered and change",
+            kind: MigrationKind::Up,
+            sql: include_str!("../migrations/012_cash_tendered.sql"),
+        },
     ]
+}
+
+/// The highest schema version this build knows how to open.
+///
+/// Restoring uses it to reject a backup from a newer version: migrations only
+/// move forward, and a database ahead of the binary leaves the app unable to
+/// start.
+pub(crate) fn latest_migration() -> i64 {
+    migrations().iter().map(|m| m.version as i64).max().unwrap_or(0)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            // Before anything else: if a backup is waiting, it goes in now.
+            // The SQL plugin does not open the database until the interface
+            // asks for it, so this is the only moment the file can be replaced
+            // with nobody holding it.
+            let dir = tauri::Manager::path(app).app_data_dir()?;
+            if backup::apply_pending(&dir) {
+                println!("restored a backup into {}", dir.display());
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
-        // Guardar el ticket en PDF necesita diálogo nativo y escritura.
+        // Saving a receipt as PDF needs the native dialog and file writing.
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(
@@ -76,7 +132,13 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             tx::sql_transaction,
-            tx::sql_apply_remote
+            tx::sql_apply_remote,
+            printer::printer_print,
+            printer::printer_open_drawer,
+            printer::printer_test,
+            backup::db_backup,
+            backup::db_restore,
+            backup::app_restart
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

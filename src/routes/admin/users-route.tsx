@@ -246,7 +246,6 @@ export function UsersRoute() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t("users.new")}</DialogTitle>
-            <DialogDescription>{t("users.newDescLocal")}</DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-4 py-2">

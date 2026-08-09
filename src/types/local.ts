@@ -78,7 +78,69 @@ export interface TableRow {
   number: number;
   capacity: number;
   status: TableStatus;
+  /** Planta o sala donde está la mesa. Manda para enrutar cocina y barra. */
+  zone_id: string | null;
   updated_at: string;
+}
+
+export type CashMovementKind = "sale" | "refund" | "drop" | "payout" | "adjustment";
+
+export interface CashRegisterRow {
+  id: string;
+  device_id: string;
+  opened_by: string | null;
+  opened_at: string;
+  opening_float_cents: number;
+  closed_by: string | null;
+  closed_at: string | null;
+  /** Lo contado a mano al cerrar. Nulo mientras el turno sigue abierto. */
+  counted_cents: number | null;
+  /** Calculados por trigger: fondo + movimientos, y recuento menos esperado. */
+  expected_cents: number;
+  difference_cents: number;
+  status: "open" | "closed";
+  note: string | null;
+}
+
+export interface CashMovementRow {
+  id: string;
+  register_id: string;
+  kind: CashMovementKind;
+  /** Con signo: entra positivo, sale negativo. */
+  amount_cents: number;
+  order_id: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ZoneRow {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface PrinterRow {
+  id: string;
+  name: string;
+  connection: "network" | "usb";
+  address: string;
+  port: number;
+  width_chars: number;
+  opens_drawer: number;
+  active: number;
+  /** Valor de `ESC t n`: 2 = CP850, 19 = CP858, 16 = CP1252, 0 = PC437. */
+  codepage: number;
+  cut_mode: "partial" | "full" | "none";
+  created_at: string;
+}
+
+export interface PrinterRoutingRow {
+  id: string;
+  /** Nulo = regla de reserva, vale para cualquier zona. */
+  zone_id: string | null;
+  print_group: string;
+  printer_id: string;
 }
 
 export interface ProductRow {
@@ -88,6 +150,8 @@ export interface ProductRow {
   category: string;
   available: number;
   tax_bp: number | null;
+  /** A qué impresora se enruta: «drinks», «hot_food»… Nunca una IP. */
+  print_group: string;
   created_at: string;
 }
 
@@ -110,6 +174,18 @@ export interface OrderRow {
    * no está viva: sus líneas están en la otra.
    */
   merged_into: string | null;
+  /** Propina. NO está incluida en `total_cents`: lo cobrado es la suma de ambos. */
+  tip_cents: number;
+  /**
+   * Efectivo que entregó el cliente. Nulo si no se anotó —tarjeta, o cuentas
+   * anteriores a que esto existiera—. El vuelto y lo que falte se deducen de
+   * aquí y del total; ver `features/orders/cash.ts`.
+   */
+  tendered_cents: number | null;
+  /** Suma de los descuentos de las líneas. Lo mantiene un trigger. */
+  discount_cents: number;
+  discount_reason: string | null;
+  discount_by: string | null;
 }
 
 export interface OrderItemRow {
@@ -120,6 +196,14 @@ export interface OrderItemRow {
   unit_price_cents: number;
   tax_bp: number;
   notes: string | null;
+  /** Rebaja la base imponible de ESTA línea, antes de calcular el impuesto. */
+  discount_cents: number;
+  /** Con valor, la línea está anulada: no cuenta en los totales. */
+  voided_at: string | null;
+  void_reason: string | null;
+  voided_by: string | null;
+  /** Cuándo salió esta línea a cocina. Nulo = todavía no se ha mandado. */
+  printed_at: string | null;
   created_at: string;
 }
 

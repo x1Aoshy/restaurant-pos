@@ -1,0 +1,61 @@
+# Self-hosted sync server, as an alternative to Supabase.
+#
+# Only needed if you run more than one terminal and would rather not depend on a
+# hosted service. A single terminal needs none of this.
+#
+#   POSTGRES_PASSWORD=... AUTHENTICATOR_PASSWORD=... docker compose up -d
+#
+# Then register the venue and save the key, which is shown once:
+#
+#   docker compose exec db psql -U postgres -d restaurant_pos \
+#     -c "select * from public.create_venue('My restaurant');"
+#
+# In the app, the server URL is this machine on port 3000. The publishable key
+# field can be left as any non-empty string: PostgREST does not check it, the
+# venue key is what grants access.
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      # No default password. A compose file with `mysecretpassword` baked in is
+      # how a database ends up on the internet with the password from the
+      # README.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: restaurant_pos
+      AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD:?set AUTHENTICATOR_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Applied in alphabetical order on first start. Roles first: the sync
+      # script revokes privileges from `anon`, which does not exist on a plain
+      # Postgres and would abort the whole script.
+      - ./roles.sh:/docker-entrypoint-initdb.d/0-roles.sh:ro
+      - ./sync-server.sql:/docker-entrypoint-initdb.d/1-sync-server.sql:ro
+    # Port 5432 is NOT published. Postgres is reachable only from the api
+    # container on the compose network; nothing outside needs to speak to it.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d restaurant_pos"]
+      interval: 5s
+      retries: 12
+
+  api:
+    image: postgrest/postgrest:latest
+    environment:
+      # Connects as `authenticator`, which owns nothing and is NOINHERIT.
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD}@db:5432/restaurant_pos
+      PGRST_DB_SCHEMA: public
+      # `anon`, never `postgres`. With the superuser here, any unauthenticated
+      # request to port 3000 would have full control of the database and every
+      # grant in sync-server.sql would be decoration.
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_OPENAPI_MODE: disabled
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
