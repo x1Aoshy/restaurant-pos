@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.0.2
+
+### Added — data safety
+
+**A backup is taken when the app closes.** The scheduled ones land mid-service
+and capture half a shift; this one captures the whole day, closed and
+reconciled, which is the state anyone would actually want back.
+
+It never blocks the exit. If the backup disk is not plugged in at eleven at
+night the failure is recorded and the app closes anyway, and there is a "Close
+without backing up" button from the first second — blocking the exit only
+teaches staff to kill the process from Task Manager, which loses the backups
+that were working too. Closing again within ten minutes skips the copy rather
+than pushing the ones that matter out of the folder, and the skip is recorded so
+the history explains itself instead of showing a gap.
+
+**Every attempt is now logged.** `backups` only ever held the last one, which
+does not answer the question people ask when something smells wrong: *since
+when?* A USB unplugged on Tuesday and plugged back in on Friday left the same
+trace as if nothing had happened. Settings › Backups › History lists the last 20
+attempts with reason and result, and the pattern names the cause — scheduled
+ones landing while close ones do not is somebody switching the machine off at
+the wall, not a bad folder.
+
+### Fixed — data safety
+
+**An interrupted backup looked like a good one.** `VACUUM INTO` is not atomic,
+so a process killed mid-copy left a `pos-*.db` that the app counted, kept, and
+offered for restore — and that was only discovered on the day someone tried to
+use it. Backups are now written as `.part` and renamed once complete. The rename
+is atomic within a volume: either the whole copy is there or it is not. This
+mattered little while copies only happened on a timer; with one on every close,
+being interrupted stops being hypothetical.
+
 ## 1.0.1
 
 ### Fixed — syncing, security

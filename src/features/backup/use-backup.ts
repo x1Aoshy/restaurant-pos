@@ -47,6 +47,103 @@ function join(folder: string, name: string) {
   return `${clean}${clean.includes("\\") ? "\\" : "/"}${name}`;
 }
 
+// =============================================================================
+// Registro
+//
+// `backups` guarda solo la última copia, y eso no responde a la pregunta que se
+// hace cuando algo va mal: «¿desde cuándo no se copia?». Cada intento pisaba al
+// anterior, así que un USB desenchufado el martes y reconectado el viernes
+// dejaba el mismo rastro que si nunca hubiera fallado.
+//
+// La entrada se abre ANTES de copiar y se cierra después. Si el proceso muere a
+// mitad —cerrar la aplicación es justo eso— queda una fila en `running`, que es
+// exactamente la información útil: se intentó y no se llegó a terminar.
+// =============================================================================
+
+export type BackupReason = "scheduled" | "manual" | "shutdown";
+export type BackupOutcome = "running" | "ok" | "error" | "skipped";
+
+/** Cuántos intentos se conservan. Suficiente para ver varias semanas. */
+const LOG_KEEP = 200;
+
+export interface BackupLogRow {
+  id: number;
+  started_at: string;
+  finished_at: string | null;
+  reason: BackupReason;
+  outcome: BackupOutcome;
+  path: string | null;
+  bytes: number | null;
+  pruned: number;
+  error: string | null;
+}
+
+async function openLogEntry(reason: BackupReason): Promise<number | null> {
+  try {
+    await exec("INSERT INTO backup_log (reason) VALUES ($1)", [reason]);
+    const row = await queryOne<{ id: number }>(
+      "SELECT MAX(id) AS id FROM backup_log",
+    );
+    return row?.id ?? null;
+  } catch {
+    // Que no se pueda anotar no debe impedir la copia. El registro sirve para
+    // explicar, y explicar importa menos que respaldar.
+    return null;
+  }
+}
+
+async function closeLogEntry(
+  id: number | null,
+  detail: {
+    outcome: Exclude<BackupOutcome, "running">;
+    result?: { path: string; bytes: number; pruned: number };
+    error?: string;
+  },
+) {
+  if (id === null) return;
+  try {
+    await exec(
+      `UPDATE backup_log
+          SET finished_at = datetime('now'), outcome = $1,
+              path = $2, bytes = $3, pruned = $4, error = $5
+        WHERE id = $6`,
+      [
+        detail.outcome,
+        detail.result?.path ?? null,
+        detail.result?.bytes ?? null,
+        detail.result?.pruned ?? 0,
+        detail.error ?? null,
+        id,
+      ],
+    );
+    // Se recorta aquí y no con un trigger: un trigger lo haría en cada inserto
+    // y no hay ninguna prisa por soltar doscientas filas de texto.
+    await exec(
+      `DELETE FROM backup_log
+        WHERE id <= (SELECT MAX(id) - $1 FROM backup_log)`,
+      [LOG_KEEP],
+    );
+  } catch {
+    // Igual que arriba.
+  }
+}
+
+/** Deja constancia de un intento que se decidió no hacer. */
+export async function logSkipped(reason: BackupReason, why: string) {
+  const id = await openLogEntry(reason);
+  await closeLogEntry(id, { outcome: "skipped", error: why });
+}
+
+/** Los últimos intentos, el más reciente primero. */
+export async function readBackupLog(limit = 20): Promise<BackupLogRow[]> {
+  const { query } = await import("@/lib/db");
+  return query<BackupLogRow>(
+    `SELECT id, started_at, finished_at, reason, outcome, path, bytes, pruned, error
+       FROM backup_log ORDER BY id DESC LIMIT $1`,
+    [limit],
+  );
+}
+
 /**
  * Copias automáticas de la base.
  *
@@ -81,7 +178,9 @@ export function useBackup() {
     void reload();
   }, [reload]);
 
-  const runNow = useCallback(async (): Promise<BackupResult | null> => {
+  const runNow = useCallback(async (
+    reason: BackupReason = "manual",
+  ): Promise<BackupResult | null> => {
     if (busy.current) return null;
     const current = await queryOne<BackupRow>(
       `SELECT enabled, folder, every_hours, keep, last_at, last_path, last_error
@@ -91,12 +190,14 @@ export function useBackup() {
 
     busy.current = true;
     setRunning(true);
+    const entry = await openLogEntry(reason);
     try {
       const result = await invoke<BackupResult>("db_backup", {
         db: DB_URL,
         path: join(current.folder, fileName()),
         keep: current.keep,
       });
+      await closeLogEntry(entry, { outcome: "ok", result });
       await exec(
         `UPDATE backups
             SET last_at = datetime('now'), last_path = $1, last_error = NULL
@@ -109,6 +210,7 @@ export function useBackup() {
       // El fallo se guarda para poder decir POR QUÉ no hay copias, en vez de
       // que la carpeta simplemente deje de crecer sin que nadie se entere.
       const message = e instanceof Error ? e.message : String(e);
+      await closeLogEntry(entry, { outcome: "error", error: message });
       await exec("UPDATE backups SET last_error = $1 WHERE id = 1", [message]);
       await reload();
       throw e;
@@ -136,7 +238,7 @@ export function useBackup() {
       // Falla en silencio a propósito: el aviso vive en el indicador y en la
       // pantalla de ajustes. Un mensaje rojo cada cinco minutos porque el USB
       // no está enchufado enseña a la gente a ignorar los mensajes.
-      await runNow().catch(() => {});
+      await runNow("scheduled").catch(() => {});
     };
 
     void check();

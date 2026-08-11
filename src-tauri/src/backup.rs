@@ -103,14 +103,42 @@ pub async fn db_backup(
         return Err(format!("la base «{db}» no está abierta"));
     };
 
+    // Se escribe a un nombre provisional y se renombra al terminar.
+    //
+    // `VACUUM INTO` no es atómico: si el proceso muere a mitad —y ahora hay una
+    // copia justo al cerrar la aplicación, que es el momento con más papeletas
+    // para eso— queda un fichero incompleto. Con el nombre definitivo ese
+    // fichero parecería una copia buena: `prune` lo contaría, el explorador lo
+    // enseñaría con su tamaño, y solo se descubriría el día que alguien intente
+    // restaurarlo.
+    //
+    // La extensión `.part` no la reconoce `is_backup`, así que un resto de una
+    // copia interrumpida no se cuenta ni se conserva. El renombrado sí es
+    // atómico dentro del mismo volumen: o está la copia entera, o no está.
+    let staging = target.with_extension("part");
+    if staging.exists() {
+        // Resto de un intento anterior que no llegó a terminar. `VACUUM INTO`
+        // se niega a escribir sobre un fichero que ya existe, así que sin esto
+        // una única interrupción dejaría las copias rotas para siempre.
+        let _ = fs::remove_file(&staging);
+    }
+
     // La ruta va LIGADA, no interpolada: en Windows lleva barras invertidas y
     // puede llevar comillas, y meterla en el texto del SQL sería pedir que un
     // nombre de carpeta raro rompa la copia.
-    sqlx::query("VACUUM INTO ?1")
-        .bind(&path)
+    if let Err(e) = sqlx::query("VACUUM INTO ?1")
+        .bind(staging.to_string_lossy().to_string())
         .execute(pool)
         .await
-        .map_err(|e| format!("No se pudo escribir la copia: {e}"))?;
+    {
+        let _ = fs::remove_file(&staging);
+        return Err(format!("No se pudo escribir la copia: {e}"));
+    }
+
+    fs::rename(&staging, &target).map_err(|e| {
+        let _ = fs::remove_file(&staging);
+        format!("No se pudo cerrar la copia: {e}")
+    })?;
 
     let bytes = fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
     // El borrado de las viejas va DESPUÉS de que la nueva exista. Al revés, un

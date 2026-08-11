@@ -6,6 +6,7 @@ import { TitleBar } from "@/components/title-bar";
 import { AppLayout } from "@/components/app-layout";
 import { LockScreen } from "@/components/lock-screen";
 import { SetupScreen } from "@/components/setup-screen";
+import { ShutdownBackup } from "@/features/backup/shutdown-backup";
 import { FloorProvider } from "@/providers/floor-provider";
 import { I18nProvider } from "@/providers/i18n-provider";
 import { MenuProvider } from "@/providers/menu-provider";
@@ -102,6 +103,10 @@ function WithI18n() {
           <Gate />
         </div>
       </div>
+      {/* Fuera de `Gate` a propósito: al final del día la aplicación suele
+          quedar en la pantalla de bloqueo, y cerrar desde ahí es justo el
+          momento en que más falta hace la copia. */}
+      <ShutdownBackup />
       <Toaster position="bottom-right" />
     </I18nProvider>
   );
